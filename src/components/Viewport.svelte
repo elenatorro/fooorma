@@ -17,7 +17,9 @@
     onPanChange,
     onStartDraw,
     onSelectShape,
+    onDeselect,
     onUpdateGeom,
+    onUpdatePts,
   }: {
     artW: number
     artH: number
@@ -32,7 +34,9 @@
     onPanChange: (px: number, py: number) => void
     onStartDraw: (layerId: string, geom: ShapeGeom) => string
     onSelectShape: (shapeId: string) => void
+    onDeselect: () => void
     onUpdateGeom: (layerId: string, shapeId: string, geom: ShapeGeom) => void
+    onUpdatePts: (layerId: string, shapeId: string, pts: number[]) => void
   } = $props()
 
   const MIN_ZOOM = 0.05
@@ -52,7 +56,7 @@
   let drawDrag: { startNx: number; startNy: number } | null = null
   let drawingShapeId: string | null = null
 
-  // Move drag state ($state so cursor derived tracks it)
+  // Move drag for geom shapes (rect/ellipse) — $state so cursor derived tracks it
   let moveDrag = $state<{
     shapeId: string
     offsetNx: number
@@ -61,22 +65,37 @@
     origH: number
   } | null>(null)
 
+  // Move drag for pts shapes (line/curve/triangle)
+  let ptsDrag = $state<{
+    shapeId: string
+    origPts: number[]
+    startNx: number
+    startNy: number
+  } | null>(null)
+
   // Hover hit ($state so cursor derived tracks it)
   let hoverHit = $state(false)
 
   function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)) }
 
-  // Hit test in pixel space. geom.x is artW-fraction, geom.y is artH-fraction,
-  // geom.w and geom.h are both artW-fractions (so equal w/h = circle).
   function hitTest(nx: number, ny: number): Shape | null {
     const px = nx * artW
     const py = ny * artH
+    const PAD = 6  // min click area in pixels
     for (let i = activeLayerShapes.length - 1; i >= 0; i--) {
       const s = activeLayerShapes[i]
+      if (s.pts) {
+        // Bounding-box hit for line / curve / triangle
+        const xs = s.pts.filter((_, j) => j % 2 === 0).map(v => v * artW)
+        const ys = s.pts.filter((_, j) => j % 2 === 1).map(v => v * artH)
+        if (px >= Math.min(...xs) - PAD && px <= Math.max(...xs) + PAD &&
+            py >= Math.min(...ys) - PAD && py <= Math.max(...ys) + PAD) return s
+        continue
+      }
       const cx = s.geom.x * artW
       const cy = s.geom.y * artH
-      const rw = s.geom.w * artW / 2
-      const rh = s.geom.h * artW / 2
+      const rw = s.geom.w * artW / 2 + PAD
+      const rh = s.geom.h * artW / 2 + PAD
       const dx = px - cx
       const dy = py - cy
       if (s.type === 'rect') {
@@ -119,15 +138,16 @@
       if (hit) {
         // Select + move mode
         onSelectShape(hit.id)
-        moveDrag = {
-          shapeId:  hit.id,
-          offsetNx: nx - hit.geom.x,
-          offsetNy: ny - hit.geom.y,
-          origW:    hit.geom.w,
-          origH:    hit.geom.h,
+        if (hit.pts) {
+          ptsDrag  = { shapeId: hit.id, origPts: [...hit.pts], startNx: nx, startNy: ny }
+        } else {
+          moveDrag = { shapeId: hit.id,
+            offsetNx: nx - hit.geom.x, offsetNy: ny - hit.geom.y,
+            origW: hit.geom.w, origH: hit.geom.h }
         }
       } else {
-        // Draw mode
+        // Draw mode — clicking empty canvas also deselects
+        onDeselect()
         drawDrag = { startNx: nx, startNy: ny }
       }
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
@@ -146,8 +166,15 @@
     const rect = artboardHost.getBoundingClientRect()
     const { nx, ny } = clientToNorm(e.clientX, e.clientY, rect, artW, artH)
 
+    if (ptsDrag && activeLayerId) {
+      const dx = nx - ptsDrag.startNx
+      const dy = ny - ptsDrag.startNy
+      const newPts = ptsDrag.origPts.map((v, i) => i % 2 === 0 ? v + dx : v + dy)
+      onUpdatePts(activeLayerId, ptsDrag.shapeId, newPts)
+      return
+    }
+
     if (moveDrag && activeLayerId) {
-      // origH is artW-fraction; convert to artH-fraction for y-axis clamping
       const origH_ny = moveDrag.origH * artW / artH
       onUpdateGeom(activeLayerId, moveDrag.shapeId, {
         x: clamp(nx - moveDrag.offsetNx, moveDrag.origW / 2, 1 - moveDrag.origW / 2),
@@ -186,6 +213,7 @@
     drawDrag       = null
     drawingShapeId = null
     moveDrag       = null
+    ptsDrag        = null
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -217,7 +245,7 @@
       ? 'grabbing'
       : spaceHeld
         ? 'grab'
-        : moveDrag !== null
+        : (moveDrag !== null || ptsDrag !== null)
           ? 'move'
           : activeLayerId
             ? (hoverHit ? 'move' : 'crosshair')

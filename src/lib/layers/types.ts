@@ -1,6 +1,13 @@
 export type ShapeType = 'rect' | 'ellipse' | 'line' | 'curve' | 'triangle'
 
-export interface ShapeColor { hex: string; opacity: number }
+export interface ShapeColor  { hex: string; opacity: number }
+export interface ShapeStroke {
+  hex: string
+  opacity: number
+  width: number                              // artW-fraction
+  align?: 'center' | 'inner' | 'outer'
+  join?:  'miter'  | 'round' | 'bevel'
+}
 
 export interface ShapeGeom {
   x: number; y: number   // center, normalized 0–1
@@ -11,6 +18,7 @@ export interface Shape {
   id: string
   type: ShapeType
   color: ShapeColor
+  stroke?: ShapeStroke
   geom: ShapeGeom
   // pts: flat normalized coords for line/curve/triangle
   // line: [x1,y1, x2,y2]  curve: [x1,y1, cx,cy, x2,y2]  triangle: [x1,y1, x2,y2, x3,y3]

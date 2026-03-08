@@ -84,28 +84,53 @@
   let tplCount   = $state(8)
   let tplCols    = $state(4)
   let tplRows    = $state(4)
-  let tplShape   = $state<'rect' | 'ellipse'>('rect')
+  let tplShape   = $state<'rect' | 'ellipse' | 'line' | 'curve' | 'triangle'>('rect')
   let tplColor   = $state('#8b5cf6')
   let tplOpacity = $state(0.85)
 
   function buildTemplate(): string {
     const color = `'${tplColor}'`
-    const op    = tplOpacity.toFixed(2)
-    const s     = tplShape
+    const op = tplOpacity.toFixed(2)
+    const s  = tplShape
+    const n  = tplCount
+    const nc = tplCols
+    const nr = tplRows
+
     if (tpl === 'single') {
+      if (s === 'line')     return `line(0.1, 0.5, 0.9, 0.5, ${color}, ${op})`
+      if (s === 'curve')    return `curve(0.1, 0.5, 0.5, 0.1, 0.9, 0.5, ${color}, ${op})`
+      if (s === 'triangle') return `triangle(0.5, 0.1, 0.2, 0.9, 0.8, 0.9, ${color}, ${op})`
       return `${s}(0.5, 0.5, 0.7, 0.7, ${color}, ${op})`
     }
+
     if (tpl === 'row') {
-      const n = tplCount
-      return `repeat(${n}, (i, t) => {\n  ${s}((i + 0.5) / ${n}, 0.5, 1/${n} * 0.85, 0.4, ${color}, ${op})\n})`
+      if (s === 'rect' || s === 'ellipse')
+        return `repeat(${n}, (i, t) => {\n  ${s}((i + 0.5) / ${n}, 0.5, 1/${n} * 0.85, 0.4, ${color}, ${op})\n})`
+      if (s === 'line')
+        return `repeat(${n}, (i, t) => {\n  line(0.1, (i + 0.5) / ${n}, 0.9, (i + 0.5) / ${n}, ${color}, ${op})\n})`
+      if (s === 'curve')
+        return `repeat(${n}, (i, t) => {\n  const y = (i + 0.5) / ${n}\n  curve(0.1, y - 0.06, 0.5, y + 0.06, 0.9, y - 0.06, ${color}, ${op})\n})`
+      return `repeat(${n}, (i, t) => {\n  const cx = (i + 0.5) / ${n}\n  const d = 1/${n} * 0.4\n  triangle(cx, 0.5 - d, cx - d, 0.5 + d, cx + d, 0.5 + d, ${color}, ${op})\n})`
     }
+
     if (tpl === 'grid') {
-      const nc = tplCols, nr = tplRows
-      return `grid(${nc}, ${nr}, (c, r, ct, rt) => {\n  ${s}((c + 0.5) / ${nc}, (r + 0.5) / ${nr}, 1/${nc} * 0.85, 1/${nr} * 0.85, ${color}, ${op})\n})`
+      if (s === 'rect' || s === 'ellipse')
+        return `grid(${nc}, ${nr}, (c, r) => {\n  ${s}((c + 0.5) / ${nc}, (r + 0.5) / ${nr}, 1/${nc} * 0.85, 1/${nr} * 0.85, ${color}, ${op})\n})`
+      if (s === 'line')
+        return `grid(${nc}, ${nr}, (c, r) => {\n  const x = (c + 0.5) / ${nc}\n  const y = (r + 0.5) / ${nr}\n  const d = 1/${nc} * 0.4\n  line(x - d, y, x + d, y, ${color}, ${op})\n})`
+      if (s === 'curve')
+        return `grid(${nc}, ${nr}, (c, r) => {\n  const x = (c + 0.5) / ${nc}\n  const y = (r + 0.5) / ${nr}\n  const d = 1/${nc} * 0.4\n  curve(x - d, y, x, y - d, x + d, y, ${color}, ${op})\n})`
+      return `grid(${nc}, ${nr}, (c, r) => {\n  const x = (c + 0.5) / ${nc}\n  const y = (r + 0.5) / ${nr}\n  const d = 1/${nc} * 0.4\n  triangle(x, y - d, x - d, y + d, x + d, y + d, ${color}, ${op})\n})`
     }
+
     // spiral
-    const n = tplCount
-    return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  ellipse(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.03 + t * 0.05, 0.03 + t * 0.05, ${color}, ${op})\n})`
+    if (s === 'rect' || s === 'ellipse')
+      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  ${s}(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.03 + t * 0.05, 0.03 + t * 0.05, ${color}, ${op})\n})`
+    if (s === 'line')
+      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const len = 0.015 + t * 0.025\n  const nx = cos(angle + PI / 2) * len\n  const ny = sin(angle + PI / 2) * len\n  line(cx - nx, cy - ny, cx + nx, cy + ny, ${color}, ${op})\n})`
+    if (s === 'curve')
+      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.03 + t * 0.04\n  curve(cx - d, cy, cx, cy - d, cx + d, cy, ${color}, ${op})\n})`
+    return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.02 + t * 0.03\n  triangle(cx, cy - d, cx - d, cy + d, cx + d, cy + d, ${color}, ${op})\n})`
   }
 
   function startRename(layer: Layer) {
@@ -290,19 +315,14 @@
           </div>
         {/if}
 
-        <!-- Shape type (not spiral — always ellipse) -->
-        {#if tpl !== 'spiral'}
-          <div class="shape-toggle" style:margin-top="8px" style:margin-bottom="8px">
-            <button
-              class="shape-type-btn"
-              class:active={tplShape === 'rect'}
-              onclick={() => tplShape = 'rect'}
-            >▭ Rect</button>
-            <button
-              class="shape-type-btn"
-              class:active={tplShape === 'ellipse'}
-              onclick={() => tplShape = 'ellipse'}
-            >◯ Ellipse</button>
+        <!-- Shape type -->
+        {#if true}
+          <div class="shape-list" style:margin-top="8px" style:margin-bottom="8px">
+            {#each ([['rect','▭','Rect'],['ellipse','◯','Ellipse'],['line','╱','Line'],['curve','∿','Curve'],['triangle','△','Triangle']] as const) as [val, icon, label]}
+              <button class="shape-list-item" class:active={tplShape === val} onclick={() => tplShape = val as typeof tplShape}>
+                <span class="shape-list-icon">{icon}</span>{label}
+              </button>
+            {/each}
           </div>
         {/if}
 
@@ -387,18 +407,22 @@
       <section class="section">
         <h2 class="section-title">Shape</h2>
 
-        <!-- Shape type toggle -->
-        <div class="shape-toggle">
-          <button
-            class="shape-type-btn"
-            class:active={activeShape.type === 'rect'}
-            onclick={() => onUpdateShape(activeLayer.id, activeShape.id, { type: 'rect' })}
-          >▭ Rect</button>
-          <button
-            class="shape-type-btn"
-            class:active={activeShape.type === 'ellipse'}
-            onclick={() => onUpdateShape(activeLayer.id, activeShape.id, { type: 'ellipse' })}
-          >◯ Ellipse</button>
+        <!-- Shape type list -->
+        <div class="shape-list">
+          {#each ([
+            ['rect',     '▭', 'Rect',     undefined],
+            ['ellipse',  '◯', 'Ellipse',  undefined],
+            ['line',     '╱', 'Line',     [0.2,0.5,0.8,0.5]],
+            ['curve',    '∿', 'Curve',    [0.2,0.5,0.5,0.1,0.8,0.5]],
+            ['triangle', '△', 'Triangle', [0.5,0.1,0.2,0.9,0.8,0.9]],
+          ] as const) as [type, icon, label, defaultPts]}
+            <button class="shape-list-item" class:active={activeShape.type === type}
+              onclick={() => onUpdateShape(activeLayer.id, activeShape.id, {
+                type, pts: defaultPts ? (activeShape.pts ?? [...defaultPts]) : undefined
+              })}>
+              <span class="shape-list-icon">{icon}</span>{label}
+            </button>
+          {/each}
         </div>
 
         <!-- Color + opacity -->
@@ -425,26 +449,146 @@
           </div>
         </div>
 
-        <!-- Geometry sliders -->
-        <h2 class="section-title" style:margin-top="12px">Position & Size</h2>
-        {#each geomKeys as { label, key }}
-          <div class="param-row">
-            <label class="param-label" for={`geom-${key}`}>{label}</label>
-            <div class="param-control">
+        <!-- Stroke (rect / ellipse / triangle) -->
+        {#if activeShape.type !== 'line' && activeShape.type !== 'curve'}
+          <div class="prop-row" style:margin-top="10px">
+            <label class="prop-label">Stroke</label>
+            <div class="color-control">
               <input
-                id={`geom-${key}`}
-                type="range"
-                min="0" max="1" step="0.001"
-                value={activeShape.geom[key]}
-                oninput={(e) => onUpdateGeom(activeLayer.id, activeShape.id, {
-                  ...activeShape.geom,
-                  [key]: parseFloat((e.target as HTMLInputElement).value)
+                type="checkbox"
+                checked={!!activeShape.stroke}
+                onchange={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
+                  stroke: (e.target as HTMLInputElement).checked
+                    ? { hex: '#000000', opacity: 1, width: 0.005 }
+                    : undefined
                 })}
               />
-              <span class="param-val">{activeShape.geom[key].toFixed(3)}</span>
+              {#if activeShape.stroke}
+                <input
+                  type="color"
+                  value={activeShape.stroke.hex}
+                  oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
+                    stroke: { ...activeShape.stroke!, hex: (e.target as HTMLInputElement).value }
+                  })}
+                />
+                <input
+                  type="range" min="0" max="1" step="0.01"
+                  value={activeShape.stroke.opacity}
+                  oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
+                    stroke: { ...activeShape.stroke!, opacity: parseFloat((e.target as HTMLInputElement).value) }
+                  })}
+                />
+                <span class="param-val">{activeShape.stroke.opacity.toFixed(2)}</span>
+              {/if}
             </div>
           </div>
-        {/each}
+          {#if activeShape.stroke}
+            {@const sk = activeShape.stroke}
+            <div class="param-row">
+              <label class="param-label" for="stroke-width">Width</label>
+              <div class="param-control">
+                <input
+                  id="stroke-width"
+                  type="range" min="0.001" max="0.05" step="0.001"
+                  value={sk.width}
+                  oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
+                    stroke: { ...sk, width: parseFloat((e.target as HTMLInputElement).value) }
+                  })}
+                />
+                <span class="param-val">{sk.width.toFixed(3)}</span>
+              </div>
+            </div>
+            <div class="prop-row">
+              <label class="prop-label">Align</label>
+              <div class="mini-toggle">
+                {#each (['center','inner','outer'] as const) as a}
+                  <button class="mini-btn" class:active={( sk.align ?? 'center') === a}
+                    onclick={() => onUpdateShape(activeLayer.id, activeShape.id, { stroke: { ...sk, align: a } })}
+                  >{a}</button>
+                {/each}
+              </div>
+            </div>
+            <div class="prop-row">
+              <label class="prop-label">Join</label>
+              <div class="mini-toggle">
+                {#each (['miter','round','bevel'] as const) as j}
+                  <button class="mini-btn" class:active={(sk.join ?? 'miter') === j}
+                    onclick={() => onUpdateShape(activeLayer.id, activeShape.id, { stroke: { ...sk, join: j } })}
+                  >{j}</button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        {/if}
+
+        <!-- Geometry sliders (rect / ellipse) -->
+        {#if activeShape.type === 'rect' || activeShape.type === 'ellipse'}
+          <h2 class="section-title" style:margin-top="12px">Position & Size</h2>
+          {#each geomKeys as { label, key }}
+            <div class="param-row">
+              <label class="param-label" for={`geom-${key}`}>{label}</label>
+              <div class="param-control">
+                <input
+                  id={`geom-${key}`}
+                  type="range"
+                  min="0" max="1" step="0.001"
+                  value={activeShape.geom[key]}
+                  oninput={(e) => onUpdateGeom(activeLayer.id, activeShape.id, {
+                    ...activeShape.geom,
+                    [key]: parseFloat((e.target as HTMLInputElement).value)
+                  })}
+                />
+                <span class="param-val">{activeShape.geom[key].toFixed(3)}</span>
+              </div>
+            </div>
+          {/each}
+        {/if}
+
+        <!-- Pts sliders (line / curve / triangle) -->
+        {#if activeShape.pts}
+          {@const ptsLabels = activeShape.type === 'curve'
+            ? ['X1','Y1','CX','CY','X2','Y2']
+            : activeShape.type === 'triangle'
+              ? ['X1','Y1','X2','Y2','X3','Y3']
+              : ['X1','Y1','X2','Y2']}
+          <h2 class="section-title" style:margin-top="12px">Points</h2>
+          {#each ptsLabels as lbl, i}
+            <div class="param-row">
+              <label class="param-label" for={`pts-${i}`}>{lbl}</label>
+              <div class="param-control">
+                <input
+                  id={`pts-${i}`}
+                  type="range"
+                  min="0" max="1" step="0.001"
+                  value={activeShape.pts[i] ?? 0}
+                  oninput={(e) => {
+                    const pts = [...(activeShape.pts!)]
+                    pts[i] = parseFloat((e.target as HTMLInputElement).value)
+                    onUpdateShape(activeLayer.id, activeShape.id, { pts })
+                  }}
+                />
+                <span class="param-val">{(activeShape.pts[i] ?? 0).toFixed(3)}</span>
+              </div>
+            </div>
+          {/each}
+          {#if activeShape.type === 'line' || activeShape.type === 'curve'}
+            <div class="param-row">
+              <label class="param-label" for="stroke-w">Stroke</label>
+              <div class="param-control">
+                <input
+                  id="stroke-w"
+                  type="range"
+                  min="0.001" max="0.05" step="0.001"
+                  value={activeShape.strokeWidth ?? 0.004}
+                  oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
+                    strokeWidth: parseFloat((e.target as HTMLInputElement).value)
+                  })}
+                />
+                <span class="param-val">{(activeShape.strokeWidth ?? 0.004).toFixed(3)}</span>
+              </div>
+            </div>
+          {/if}
+        {/if}
       </section>
     {/if}
   {/if}
@@ -837,26 +981,41 @@
   .effects-toggle:hover { border-color: #555; color: #aaa; }
   .effects-toggle.on { border-color: #8b5cf6; background: #1a1428; color: #c4b0f8; }
 
-  /* ── Shape properties ── */
-  .shape-toggle {
+  /* ── Shape list (type selector) ── */
+  .shape-list {
     display: flex;
-    gap: 6px;
+    flex-direction: column;
+    border: 1px solid #2b2b30;
+    border-radius: 6px;
+    overflow: hidden;
     margin-bottom: 12px;
   }
 
-  .shape-type-btn {
-    flex: 1;
-    padding: 6px;
+  .shape-list-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
     background: #111114;
-    border: 1px solid #2b2b30;
-    border-radius: 5px;
+    border: none;
+    border-bottom: 1px solid #1e1e22;
     color: #888890;
     font-size: 12px;
+    text-align: left;
     cursor: pointer;
-    transition: border-color .15s, background .15s, color .15s;
+    transition: background .12s, color .12s;
   }
-  .shape-type-btn:hover { border-color: #444; color: #bbb; }
-  .shape-type-btn.active { border-color: #8b5cf6; background: #1a1428; color: #c4b0f8; }
+  .shape-list-item:last-child { border-bottom: none; }
+  .shape-list-item:hover { background: #18181c; color: #bbb; }
+  .shape-list-item.active { background: #1a1428; color: #c4b0f8; }
+  .shape-list-item.active .shape-list-icon { color: #8b5cf6; }
+
+  .shape-list-icon {
+    width: 16px;
+    text-align: center;
+    color: #555;
+    font-size: 13px;
+  }
 
   .prop-row {
     display: flex;
@@ -864,6 +1023,24 @@
     gap: 4px;
     margin-bottom: 8px;
   }
+
+  .mini-toggle {
+    display: flex;
+    gap: 4px;
+  }
+  .mini-btn {
+    flex: 1;
+    padding: 4px 6px;
+    background: #111114;
+    border: 1px solid #2b2b30;
+    border-radius: 4px;
+    color: #666;
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color .12s, color .12s, background .12s;
+  }
+  .mini-btn:hover  { border-color: #444; color: #aaa; }
+  .mini-btn.active { border-color: #8b5cf6; background: #1a1428; color: #c4b0f8; }
 
   .prop-label {
     font-size: 11px;

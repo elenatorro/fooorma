@@ -256,8 +256,43 @@
       }
       ctx2d.setTransform(scale, 0, 0, scale, 0, 0)
       renderLayers2D(ctx2d, resolvedLayers, artW, artH)
+      drawSelectionOutline(ctx2d)
     }
     rafId = requestAnimationFrame(loop)
+  }
+
+  function drawSelectionOutline(ctx: CanvasRenderingContext2D) {
+    if (!activeShapeId) return
+    let shape: Shape | null = null
+    for (const l of resolvedLayers) {
+      shape = l.shapes.find(s => s.id === activeShapeId) ?? null
+      if (shape) break
+    }
+    if (!shape) return
+
+    ctx.save()
+    ctx.globalAlpha = 0.6
+    ctx.strokeStyle = '#94a3b8'
+    ctx.lineWidth = 1
+    ctx.setLineDash([4, 4])
+
+    if (shape.pts) {
+      const xs = shape.pts.filter((_, i) => i % 2 === 0).map(v => v * artW)
+      const ys = shape.pts.filter((_, i) => i % 2 === 1).map(v => v * artH)
+      const pad = 4
+      ctx.strokeRect(Math.min(...xs) - pad, Math.min(...ys) - pad,
+        Math.max(...xs) - Math.min(...xs) + pad * 2,
+        Math.max(...ys) - Math.min(...ys) + pad * 2)
+    } else {
+      const pad = 3
+      const pw = shape.geom.w * artW
+      const ph = shape.geom.h * artW
+      const px = shape.geom.x * artW - pw / 2 - pad
+      const py = shape.geom.y * artH - ph / 2 - pad
+      ctx.strokeRect(px, py, pw + pad * 2, ph + pad * 2)
+    }
+
+    ctx.restore()
   }
 
   // ── Sketch change ──────────────────────────────────────────────────────────
@@ -297,8 +332,8 @@
       octx.drawImage(gpuImg, 0, 0)
     }
 
-    // Draw 2D overlay — scale canvas2d (which is zoom×dpr sized) down to artboard pixels
-    if (canvas2d) octx.drawImage(canvas2d, 0, 0, artW, artH)
+    // Draw 2D overlay cleanly (no selection outline)
+    renderLayers2D(octx, resolvedLayers, artW, artH)
 
     const blob = await new Promise<Blob>(res =>
       offscreen.toBlob(b => res(b!), 'image/png')
@@ -316,6 +351,7 @@
     const tag = (e.target as HTMLElement).tagName
     if (tag === 'INPUT' || tag === 'TEXTAREA') return
 
+    if (e.key === 'Escape') { activeShapeId = null }
     if (e.key === '0') { e.preventDefault(); fit() }
     if (e.key === '1') { e.preventDefault(); zoom = 1; panX = 0; panY = 0 }
     if (e.key === '+' || e.key === '=') { e.preventDefault(); stepZoom(1) }
@@ -360,7 +396,13 @@
   onPanChange={(px, py) => { panX = px; panY = py }}
   onStartDraw={handleStartDraw}
   onSelectShape={handleSelectShape}
+  onDeselect={() => { activeShapeId = null }}
   onUpdateGeom={handleUpdateGeom}
+  onUpdatePts={(layerId, shapeId, pts) => {
+    layers = layers.map(l => l.id === layerId ? {
+      ...l, shapes: l.shapes.map(s => s.id === shapeId ? { ...s, pts } : s)
+    } : l)
+  }}
 />
 
 <RightPanel

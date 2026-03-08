@@ -18,30 +18,34 @@ export function renderLayers2D(
     }
 
     for (const shape of layer.shapes) {
-      const { type, color, geom } = shape
+      const { type, color, geom, stroke } = shape
 
-      // Convert normalized coords to pixels.
-      // x/y are relative to their respective axis; w/h are both relative to artW
-      // so that equal w and h always produces a circle regardless of artboard aspect ratio.
-      const px = geom.x * artW
-      const py = geom.y * artH
-      const pw = geom.w * artW
-      const ph = geom.h * artW
+      const px   = geom.x * artW
+      const py   = geom.y * artH
+      const pw   = geom.w * artW
+      const ph   = geom.h * artW
       const left = px - pw / 2
       const top  = py - ph / 2
 
-      ctx.globalAlpha = color.opacity
-
-      if (type === 'rect') {
-        ctx.fillStyle = color.hex
-        ctx.fillRect(left, top, pw, ph)
-      } else if (type === 'ellipse') {
-        ctx.fillStyle = color.hex
+      // Build a (re-usable) path for filled shapes
+      function buildShapePath() {
         ctx.beginPath()
-        ctx.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2)
-        ctx.fill()
-      } else if (type === 'line' || type === 'curve') {
+        if (type === 'rect') {
+          ctx.rect(left, top, pw, ph)
+        } else if (type === 'ellipse') {
+          ctx.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2)
+        } else if (type === 'triangle') {
+          const p = shape.pts!
+          ctx.moveTo(p[0] * artW, p[1] * artH)
+          ctx.lineTo(p[2] * artW, p[3] * artH)
+          ctx.lineTo(p[4] * artW, p[5] * artH)
+          ctx.closePath()
+        }
+      }
+
+      if (type === 'line' || type === 'curve') {
         const p = shape.pts!
+        ctx.globalAlpha = color.opacity
         ctx.strokeStyle = color.hex
         ctx.lineWidth   = (shape.strokeWidth ?? 0.004) * artW
         ctx.lineCap     = 'round'
@@ -53,15 +57,59 @@ export function renderLayers2D(
           ctx.lineTo(p[2] * artW, p[3] * artH)
         }
         ctx.stroke()
-      } else if (type === 'triangle') {
-        const p = shape.pts!
-        ctx.fillStyle = color.hex
-        ctx.beginPath()
-        ctx.moveTo(p[0] * artW, p[1] * artH)
-        ctx.lineTo(p[2] * artW, p[3] * artH)
-        ctx.lineTo(p[4] * artW, p[5] * artH)
-        ctx.closePath()
-        ctx.fill()
+        continue
+      }
+
+      // Fill
+      ctx.globalAlpha = color.opacity
+      ctx.fillStyle   = color.hex
+      buildShapePath()
+      ctx.fill()
+
+      // Stroke
+      if (stroke) {
+        const lw    = stroke.width * artW
+        const align = stroke.align ?? 'center'
+        ctx.strokeStyle = stroke.hex
+        ctx.lineJoin    = stroke.join ?? 'miter'
+
+        if (align === 'center') {
+          ctx.globalAlpha = stroke.opacity
+          ctx.lineWidth   = lw
+          buildShapePath()
+          ctx.stroke()
+        } else if (align === 'inner') {
+          ctx.save()
+          buildShapePath()
+          ctx.clip()
+          ctx.globalAlpha = stroke.opacity
+          ctx.lineWidth   = lw * 2
+          buildShapePath()
+          ctx.stroke()
+          ctx.restore()
+        } else { // outer
+          ctx.save()
+          ctx.beginPath()
+          ctx.rect(-1, -1, artW + 2, artH + 2)
+          // add shape as sub-path; even-odd rule excludes the interior
+          if (type === 'rect') {
+            ctx.rect(left, top, pw, ph)
+          } else if (type === 'ellipse') {
+            ctx.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2)
+          } else if (type === 'triangle') {
+            const p = shape.pts!
+            ctx.moveTo(p[0] * artW, p[1] * artH)
+            ctx.lineTo(p[2] * artW, p[3] * artH)
+            ctx.lineTo(p[4] * artW, p[5] * artH)
+            ctx.closePath()
+          }
+          ctx.clip('evenodd')
+          ctx.globalAlpha = stroke.opacity
+          ctx.lineWidth   = lw * 2
+          buildShapePath()
+          ctx.stroke()
+          ctx.restore()
+        }
       }
     }
   }
