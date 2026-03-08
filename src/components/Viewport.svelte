@@ -298,7 +298,7 @@
     position: fixed;
     top: 44px;
     left: 0;
-    right: 260px;
+    right: var(--panel-w, 260px);
     bottom: 36px;
     background: #0e0e10;
     overflow: hidden;

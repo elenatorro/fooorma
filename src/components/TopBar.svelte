@@ -6,90 +6,159 @@
     artH,
     onSizeChange,
     onExport,
+    onSave,
+    onLoad,
   }: {
     artW: number
     artH: number
     onSizeChange: (w: number, h: number) => void
     onExport: () => void
+    onSave: () => void
+    onLoad: (file: File) => void
   } = $props()
 
+  // ── File open ──────────────────────────────────────────────────────────────
+  let fileInput: HTMLInputElement
+
+  function openFilePicker() {
+    fileInput.value = ''
+    fileInput.click()
+  }
+
+  function onFileChange(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0]
+    if (file) onLoad(file)
+  }
+
+  // ── Canvas size ────────────────────────────────────────────────────────────
   const PRESETS: SizePreset[] = [
     { label: 'A4 Portrait',  w: 794,  h: 1123 },
     { label: 'A4 Landscape', w: 1123, h: 794  },
-    { label: '1080 × 1080',  w: 1080, h: 1080 },
+    { label: 'Square 1080',  w: 1080, h: 1080 },
     { label: '1920 × 1080',  w: 1920, h: 1080 },
     { label: '1080 × 1920',  w: 1080, h: 1920 },
     { label: '2048 × 2048',  w: 2048, h: 2048 },
-    { label: 'Custom',       w: 0,    h: 0    },
+    { label: '4096 × 4096',  w: 4096, h: 4096 },
   ]
 
-  let showDropdown  = $state(false)
-  let showCustom    = $state(false)
-  let customW       = $state(0)
-  let customH       = $state(0)
+  let editW = $state(artW)
+  let editH = $state(artH)
+  let showPresets = $state(false)
 
-  function activeLabel() {
-    const m = PRESETS.find(p => p.w === artW && p.h === artH)
-    return m?.label ?? `${artW} × ${artH}`
+  // Sync when artW/artH change from outside (e.g. file load)
+  $effect(() => { editW = artW })
+  $effect(() => { editH = artH })
+
+  function applySize() {
+    const w = Math.max(100, Math.min(8192, Math.round(editW) || 100))
+    const h = Math.max(100, Math.min(8192, Math.round(editH) || 100))
+    editW = w
+    editH = h
+    if (w !== artW || h !== artH) onSizeChange(w, h)
+  }
+
+  function onDimKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      applySize()
+      ;(e.target as HTMLInputElement).blur()
+    }
+  }
+
+  function swapDims() {
+    const tmp = editW
+    editW = editH
+    editH = tmp
+    applySize()
   }
 
   function selectPreset(p: SizePreset) {
-    showDropdown = false
-    if (p.label === 'Custom') { customW = artW; customH = artH; showCustom = true; return }
-    showCustom = false
+    editW = p.w
+    editH = p.h
+    showPresets = false
     onSizeChange(p.w, p.h)
   }
 
-  function applyCustom() {
-    const w = Math.max(100, Math.min(8192, customW))
-    const h = Math.max(100, Math.min(8192, customH))
-    onSizeChange(w, h)
-    showCustom = false
-  }
+  const isPreset = $derived(PRESETS.some(p => p.w === artW && p.h === artH))
 </script>
 
 <header class="topbar">
   <span class="logo">forma</span>
 
-  <div class="size-picker">
-    <button class="size-btn" onclick={() => showDropdown = !showDropdown}>
-      {activeLabel()} <span class="arrow">▾</span>
-    </button>
+  <!-- Canvas size editor -->
+  <div class="size-editor">
+    <div class="dim-pair">
+      <label class="dim-label">W</label>
+      <input
+        class="dim-input"
+        type="number"
+        min="100" max="8192" step="1"
+        value={editW}
+        oninput={(e) => editW = parseInt((e.target as HTMLInputElement).value) || editW}
+        onblur={applySize}
+        onkeydown={onDimKeydown}
+      />
+    </div>
+    <span class="dim-sep">×</span>
+    <div class="dim-pair">
+      <label class="dim-label">H</label>
+      <input
+        class="dim-input"
+        type="number"
+        min="100" max="8192" step="1"
+        value={editH}
+        oninput={(e) => editH = parseInt((e.target as HTMLInputElement).value) || editH}
+        onblur={applySize}
+        onkeydown={onDimKeydown}
+      />
+    </div>
+    <button class="swap-btn" onclick={swapDims} title="Swap width ↔ height">⇄</button>
+    <div class="preset-wrap">
+      <button
+        class="preset-toggle"
+        class:active={isPreset}
+        onclick={() => showPresets = !showPresets}
+        title="Presets"
+      >▾</button>
+      {#if showPresets}
+        <div class="preset-dropdown">
+          {#each PRESETS as p}
+            <button
+              class="preset-item"
+              class:active={p.w === artW && p.h === artH}
+              onclick={() => selectPreset(p)}
+            >
+              <span>{p.label}</span>
+              <span class="preset-dim">{p.w}×{p.h}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  </div>
 
-    {#if showDropdown}
-      <div class="dropdown" role="menu">
-        {#each PRESETS as p}
-          <button
-            class="dropdown-item"
-            class:active={p.w === artW && p.h === artH}
-            onclick={() => selectPreset(p)}
-            role="menuitem"
-          >
-            {p.label}
-            {#if p.w}
-              <span class="dim">{p.w}×{p.h}</span>
-            {/if}
-          </button>
-        {/each}
-      </div>
-    {/if}
-
-    {#if showCustom}
-      <div class="custom-form">
-        <input type="number" bind:value={customW} min="100" max="8192" placeholder="W" />
-        <span>×</span>
-        <input type="number" bind:value={customH} min="100" max="8192" placeholder="H" />
-        <button class="apply-btn" onclick={applyCustom}>Apply</button>
-      </div>
-    {/if}
+  <!-- File controls -->
+  <div class="file-controls">
+    <button class="file-btn" onclick={openFilePicker} title="Open .forma file">Open</button>
+    <button class="file-btn" onclick={onSave} title="Save project as .forma">Save</button>
   </div>
 
   <button class="export-btn" onclick={onExport}>Export PNG</button>
 </header>
 
-<!-- close dropdown on outside click -->
-{#if showDropdown}
-  <div class="overlay" role="presentation" onclick={() => showDropdown = false}></div>
+<!-- hidden file input -->
+<input
+  bind:this={fileInput}
+  type="file"
+  accept=".forma,.txt"
+  style:display="none"
+  onchange={onFileChange}
+/>
+
+<!-- close presets on outside click -->
+{#if showPresets}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="overlay" onclick={() => showPresets = false}></div>
 {/if}
 
 <style>
@@ -116,28 +185,95 @@
     flex-shrink: 0;
   }
 
-  .size-picker {
-    position: relative;
+  /* ── Size editor ── */
+  .size-editor {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     flex-shrink: 0;
   }
 
-  .size-btn {
-    background: #222226;
+  .dim-pair {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: #111114;
     border: 1px solid #2b2b30;
-    color: #c4c4cc;
+    border-radius: 5px;
+    padding: 0 6px;
+    height: 28px;
+    transition: border-color .12s;
+  }
+  .dim-pair:focus-within { border-color: #8b5cf6; }
+
+  .dim-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #444450;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    flex-shrink: 0;
+  }
+
+  .dim-input {
+    width: 44px;
+    background: none;
+    border: none;
+    color: #c8c8d0;
     font-size: 12px;
-    padding: 5px 10px;
+    font-family: monospace;
+    text-align: right;
+    outline: none;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .dim-input::-webkit-inner-spin-button,
+  .dim-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+  .dim-sep {
+    font-size: 12px;
+    color: #333340;
+  }
+
+  .swap-btn {
+    background: none;
+    border: 1px solid #2b2b30;
+    color: #444450;
+    font-size: 14px;
+    width: 26px;
+    height: 28px;
     border-radius: 5px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
+    transition: border-color .12s, color .12s;
   }
-  .size-btn:hover { border-color: #444; color: #e2e2e6; }
+  .swap-btn:hover { border-color: #555; color: #aaa; }
 
-  .arrow { font-size: 10px; opacity: .6; }
+  /* ── Presets ── */
+  .preset-wrap {
+    position: relative;
+  }
 
-  .dropdown {
+  .preset-toggle {
+    background: none;
+    border: 1px solid #2b2b30;
+    color: #444450;
+    font-size: 10px;
+    width: 22px;
+    height: 28px;
+    border-radius: 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color .12s, color .12s;
+  }
+  .preset-toggle:hover { border-color: #555; color: #aaa; }
+  .preset-toggle.active { border-color: #8b5cf6; color: #c4b0f8; }
+
+  .preset-dropdown {
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
@@ -150,7 +286,7 @@
     box-shadow: 0 8px 24px rgba(0,0,0,.5);
   }
 
-  .dropdown-item {
+  .preset-item {
     width: 100%;
     background: none;
     border: none;
@@ -163,56 +299,37 @@
     justify-content: space-between;
     align-items: center;
     gap: 12px;
+    transition: background .1s;
   }
-  .dropdown-item:hover { background: #2a2a30; color: #e2e2e6; }
-  .dropdown-item.active { color: #8b5cf6; }
+  .preset-item:hover { background: #2a2a30; color: #e2e2e6; }
+  .preset-item.active { color: #8b5cf6; }
 
-  .dim {
+  .preset-dim {
     font-family: monospace;
     font-size: 10px;
-    opacity: .5;
+    opacity: .45;
   }
 
-  .custom-form {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    background: #1e1e22;
-    border: 1px solid #2b2b30;
-    border-radius: 6px;
-    padding: 10px;
+  /* ── File / Export ── */
+  .file-controls {
+    margin-left: auto;
     display: flex;
-    align-items: center;
-    gap: 6px;
-    z-index: 200;
-    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    gap: 4px;
   }
-  .custom-form input {
-    width: 68px;
-    background: #111114;
-    border: 1px solid #2b2b30;
-    color: #e2e2e6;
-    font-size: 12px;
-    padding: 4px 6px;
-    border-radius: 4px;
-    text-align: center;
-  }
-  .custom-form input:focus { outline: none; border-color: #8b5cf6; }
-  .custom-form span { color: #666672; font-size: 12px; }
 
-  .apply-btn {
-    background: #8b5cf6;
-    border: none;
-    color: #fff;
-    font-size: 11px;
+  .file-btn {
+    background: none;
+    border: 1px solid #2b2b30;
+    color: #888890;
+    font-size: 12px;
     padding: 5px 10px;
-    border-radius: 4px;
+    border-radius: 5px;
     cursor: pointer;
+    transition: border-color .15s, color .15s;
   }
-  .apply-btn:hover { background: #7c3aed; }
+  .file-btn:hover { border-color: #555; color: #c8c8d0; }
 
   .export-btn {
-    margin-left: auto;
     background: none;
     border: 1px solid #2b2b30;
     color: #c4c4cc;
@@ -221,12 +338,13 @@
     border-radius: 5px;
     cursor: pointer;
     flex-shrink: 0;
+    transition: border-color .15s, color .15s;
   }
   .export-btn:hover { border-color: #8b5cf6; color: #8b5cf6; }
 
   .overlay {
     position: fixed;
     inset: 0;
-    z-index: 150;
+    z-index: 50;
   }
 </style>

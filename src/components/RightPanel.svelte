@@ -1,13 +1,20 @@
 <script lang="ts">
   import type { SketchDef } from '../lib/sketches/types'
   import type { Layer, Shape, ShapeGeom } from '../lib/layers/types'
+  import type { Palette } from '../lib/palettes/index'
+  import { paletteVarName } from '../lib/palettes/index'
   import { evaluateQuery } from '../lib/query/index'
+  import ColorPicker from './ColorPicker.svelte'
+  import GradColorEditor from './GradColorEditor.svelte'
+  import CodeEditor from './CodeEditor.svelte'
 
   const {
     sketches,
     activeSketch,
     effectsEnabled,
     params,
+    artW,
+    artH,
     layers,
     activeLayerId,
     activeShapeId,
@@ -30,18 +37,24 @@
     onUpdateShape,
     onUpdateGeom,
     onToggleEffects,
+    palettes,
+    onAddPalette,
+    onUpdatePalette,
+    onDeletePalette,
   }: {
     sketches: SketchDef[]
     activeSketch: SketchDef
     effectsEnabled: boolean
     params: Record<string, number>
+    artW: number
+    artH: number
     layers: Layer[]
     activeLayerId: string | null
     activeShapeId: string | null
-    activeTab: 'layers' | 'effects'
+    activeTab: 'layers' | 'effects' | 'palettes'
     onSketchChange: (s: SketchDef) => void
     onParamChange: (id: string, value: number) => void
-    onTabChange: (t: 'layers' | 'effects') => void
+    onTabChange: (t: 'layers' | 'effects' | 'palettes') => void
     onAddLayer: () => void
     onSelectLayer: (id: string) => void
     onDeleteLayer: (id: string) => void
@@ -57,12 +70,16 @@
     onUpdateShape: (layerId: string, shapeId: string, update: Partial<Shape>) => void
     onUpdateGeom: (layerId: string, shapeId: string, geom: ShapeGeom) => void
     onToggleEffects: () => void
+    palettes: Palette[]
+    onAddPalette: () => void
+    onUpdatePalette: (id: string, update: Partial<Palette>) => void
+    onDeletePalette: (id: string) => void
   } = $props()
 
   const activeLayer = $derived(layers.find(l => l.id === activeLayerId) ?? null)
   const activeShape = $derived(activeLayer?.shapes.find(s => s.id === activeShapeId) ?? null)
   const isCodeMode  = $derived(activeLayer?.mode === 'code')
-  const codeResult  = $derived(isCodeMode && activeLayer ? evaluateQuery(activeLayer.query) : null)
+  const codeResult  = $derived(isCodeMode && activeLayer ? evaluateQuery(activeLayer.query, artW, artH, palettes) : null)
 
   const geomKeys: { label: string; key: 'x' | 'y' | 'w' | 'h' }[] = [
     { label: 'X center', key: 'x' },
@@ -75,9 +92,55 @@
   let editingId = $state<string | null>(null)
   let editingName = $state('')
 
+  // Palette rename state
+  let editingPaletteId   = $state<string | null>(null)
+  let editingPaletteName = $state('')
+
   // Drag-to-reorder state
   let dragSrcId  = $state<string | null>(null)
   let dragOverId = $state<string | null>(null)
+
+  // Code editor state
+  let codeExpanded = $state(false)
+  let apiOpen      = $state(false)
+  let editorRef    = $state<{ insertAtCursor: (t: string) => void; getColorAtCursor: () => { hex: string; from: number; to: number } | null; replaceRange: (from: number, to: number, text: string) => void; focus: () => void } | null>(null)
+
+  const apiSnippets: { name: string; sig: string; code: string }[] = [
+    { name: 'rect',     sig: 'x, y, w, h, color?, opacity?, stroke?',        code: "rect(0.5, 0.5, 0.3, 0.3, '#8b5cf6', 0.85)" },
+    { name: 'ellipse',  sig: 'x, y, w, h, color?, opacity?, stroke?',        code: "ellipse(0.5, 0.5, 0.3, 0.3, '#8b5cf6', 0.85)" },
+    { name: 'triangle', sig: 'x1,y1, x2,y2, x3,y3, color?, opacity?, stroke?', code: "triangle(0.5, 0.1, 0.2, 0.9, 0.8, 0.9, '#8b5cf6', 0.85)" },
+    { name: 'line',     sig: 'x1, y1, x2, y2, color?, opacity?, width?',     code: "line(0.1, 0.5, 0.9, 0.5, '#8b5cf6', 0.85)" },
+    { name: 'curve',    sig: 'x1, y1, cx, cy, x2, y2, color?, opacity?, width?', code: "curve(0.1, 0.5, 0.5, 0.15, 0.9, 0.5, '#8b5cf6', 0.85)" },
+    { name: 'stroke',    sig: "hex, opacity?, width?, align?, join?",           code: "stroke('#000000', 1, 0.005)" },
+    { name: 'rotate',    sig: 'deg',                                           code: "rotate(45)" },
+    { name: 'transform', sig: '{ rotate?, scaleX?, scaleY?, skewX?, skewY? }', code: "transform({ rotate: 45, scaleX: 1.2 })" },
+    { name: 'grad',      sig: 'angle, …stops',                                code: "grad(90, '#8b5cf6', '#4ecdc4')" },
+    { name: 'radGrad',  sig: '…stops',                                       code: "radGrad('#8b5cf6', '#4ecdc4')" },
+    { name: 'repeat',   sig: 'n, (i, t) => { }',                             code: "repeat(8, (i, t) => {\n  rect((i + 0.5) / 8, 0.5, 0.1, 0.1)\n})" },
+    { name: 'grid',     sig: 'cols, rows, (c, r) => { }',                    code: "grid(4, 4, (c, r) => {\n  rect((c + 0.5) / 4, (r + 0.5) / 4, 0.2, 0.2)\n})" },
+  ]
+
+  // ── Cursor color detection ─────────────────────────────────────────────────
+  let cursorColor = $state<{ hex: string; from: number; to: number } | null>(null)
+
+  function detectColorAtCursor() {
+    cursorColor = editorRef?.getColorAtCursor() ?? null
+  }
+
+  function onCursorColorChange(newHex: string) {
+    if (!cursorColor) return
+    editorRef?.replaceRange(cursorColor.from, cursorColor.to, newHex)
+    cursorColor = { ...cursorColor, hex: newHex, to: cursorColor.from + 7 }
+  }
+
+  function copyCode() {
+    if (activeLayer) navigator.clipboard.writeText(activeLayer.query)
+  }
+
+  function insertSnippet(code: string) {
+    if (!activeLayer) return
+    editorRef?.insertAtCursor(code)
+  }
 
   // Template builder state
   let tpl        = $state<'single' | 'row' | 'grid' | 'spiral'>('row')
@@ -157,6 +220,11 @@
       class:active={activeTab === 'layers'}
       onclick={() => onTabChange('layers')}
     >Layers</button>
+    <button
+      class="tab-btn"
+      class:active={activeTab === 'palettes'}
+      onclick={() => onTabChange('palettes')}
+    >Palettes</button>
     <button
       class="tab-btn"
       class:active={activeTab === 'effects'}
@@ -242,16 +310,16 @@
                 (e.target as HTMLInputElement).checked ? '#1a1a2e' : undefined
               )}
             />
-            <input
-              id="layer-bg-color"
-              type="color"
-              value={activeLayer.bgColor ?? '#1a1a2e'}
-              disabled={activeLayer.bgColor === undefined}
-              oninput={(e) => onUpdateLayerBg(activeLayer.id, (e.target as HTMLInputElement).value)}
-            />
-            <span class="prop-label" style:flex="1">
-              {activeLayer.bgColor ?? 'None'}
-            </span>
+            {#if activeLayer.bgColor !== undefined}
+              <ColorPicker
+                hex={activeLayer.bgColor}
+                showOpacity={false}
+                onChange={(h) => onUpdateLayerBg(activeLayer.id, h)}
+              />
+              <span class="prop-label" style:flex="1" style:font-family="monospace">{activeLayer.bgColor}</span>
+            {:else}
+              <span class="prop-label" style:flex="1">None</span>
+            {/if}
           </div>
         </div>
       </section>
@@ -328,8 +396,12 @@
 
         <!-- Color + opacity -->
         <div class="color-control" style:margin-bottom="10px">
-          <input type="color" bind:value={tplColor} />
-          <input type="range" min="0" max="1" step="0.01" bind:value={tplOpacity} />
+          <ColorPicker
+            hex={tplColor}
+            opacity={tplOpacity}
+            onChange={(h, op) => { tplColor = h; tplOpacity = op }}
+          />
+          <span class="prop-label" style:font-family="monospace" style:flex="1">{tplColor}</span>
           <span class="param-val">{tplOpacity.toFixed(2)}</span>
         </div>
 
@@ -342,34 +414,95 @@
 
     <!-- Code editor (code mode) -->
     {#if activeLayer && isCodeMode}
-      <section class="section code-section">
-        <!-- svelte-ignore a11y_autofocus -->
-        <textarea
-          class="code-editor"
-          spellcheck="false"
+      <section class="section code-section" class:expanded={codeExpanded}>
+
+        <!-- Toolbar -->
+        <div class="code-toolbar">
+          <span class="code-label">Code</span>
+          {#if cursorColor}
+            <div class="code-color-pick" title="Edit color at cursor">
+              <ColorPicker
+                hex={cursorColor.hex}
+                showOpacity={false}
+                onChange={onCursorColorChange}
+              />
+              <span class="code-color-hex">{cursorColor.hex}</span>
+            </div>
+          {/if}
+          <div class="code-actions">
+            <button class="code-tool-btn" title="Copy code" onclick={copyCode}>copy</button>
+            <button class="code-tool-btn" title="Clear" onclick={() => activeLayer && onSetQuery(activeLayer.id, '')}>clear</button>
+            <button class="code-tool-btn expand-btn" class:active={codeExpanded} title={codeExpanded ? 'Collapse' : 'Expand'} onclick={() => codeExpanded = !codeExpanded}>↕</button>
+          </div>
+        </div>
+
+        <!-- Editor area -->
+        <CodeEditor
+          bind:this={editorRef}
           value={activeLayer.query}
-          placeholder={"// rect(x, y, w, h, color?, opacity?)\n// ellipse(x, y, w, h, color?, opacity?)\n// repeat(n, (i, t) => { ... })\n// grid(cols, rows, (c, r, ct, rt) => { ... })"}
-          oninput={(e) => onSetQuery(activeLayer.id, (e.target as HTMLTextAreaElement).value)}
-          onkeydown={(e) => {
-            if (e.key === 'Tab') {
-              e.preventDefault()
-              const ta = e.target as HTMLTextAreaElement
-              const start = ta.selectionStart
-              const end   = ta.selectionEnd
-              ta.setRangeText('  ', start, end, 'end')
-              ta.dispatchEvent(new Event('input', { bubbles: true }))
-            }
-          }}
-        ></textarea>
-        {#if codeResult && codeResult.errors.length > 0}
+          minHeight={codeExpanded ? '400px' : '220px'}
+          extraCompletions={palettes.map(p => paletteVarName(p.name))}
+          onChange={(v) => { onSetQuery(activeLayer.id, v); detectColorAtCursor() }}
+          onCursorChange={detectColorAtCursor}
+        />
+
+        <!-- Status bar -->
+        <div class="code-statusbar">
+          {#if codeResult?.errors.length}
+            <span class="status-err">● {codeResult.errors.length} error{codeResult.errors.length !== 1 ? 's' : ''}</span>
+          {:else if codeResult}
+            <span class="status-ok">● {codeResult.shapes.length} shape{codeResult.shapes.length !== 1 ? 's' : ''}</span>
+          {:else}
+            <span class="status-idle">—</span>
+          {/if}
+          <span class="status-lines">{activeLayer.query.split('\n').length} lines</span>
+        </div>
+
+        <!-- Error details -->
+        {#if codeResult?.errors.length}
           <div class="error-list">
             {#each codeResult.errors as err}
               <p class="error-line">{err}</p>
             {/each}
           </div>
-        {:else if codeResult}
-          <p class="code-hint">{codeResult.shapes.length} shape{codeResult.shapes.length !== 1 ? 's' : ''}</p>
         {/if}
+
+        <!-- API Reference -->
+        <div class="api-ref">
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="api-ref-toggle" onclick={() => apiOpen = !apiOpen}>
+            <span>API Reference</span>
+            <span class="api-chevron">{apiOpen ? '▴' : '▾'}</span>
+          </div>
+          {#if apiOpen}
+            <div class="api-ref-body">
+              {#each apiSnippets as snip}
+                <button class="api-snip" onclick={() => insertSnippet(snip.code)} title="Insert at cursor">
+                  <span class="api-snip-name">{snip.name}</span>
+                  <span class="api-snip-sig">{snip.sig}</span>
+                </button>
+              {/each}
+              <div class="api-consts">
+                {#each ['W', 'H', 'PI', 'TAU', 'sin', 'cos', 'abs', 'min', 'max', 'floor', 'ceil', 'round', 'random'] as c}
+                  <button class="api-const-btn" onclick={() => insertSnippet(c)} title={c}>{c}</button>
+                {/each}
+                {#each palettes as p}
+                  {@const vn = paletteVarName(p.name)}
+                  <button class="api-const-btn palette-var-btn" onclick={() => insertSnippet(vn)} title="{p.name} — {p.colors.length} colors">
+                    <span class="palette-var-dots">
+                      {#each p.colors.slice(0, 5) as c}
+                        <span class="palette-dot" style:background={c}></span>
+                      {/each}
+                    </span>
+                    {vn}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </div>
+
       </section>
     {/if}
 
@@ -427,26 +560,11 @@
 
         <!-- Color + opacity -->
         <div class="prop-row">
-          <label class="prop-label" for="color-hex">Color</label>
-          <div class="color-control">
-            <input
-              id="color-hex"
-              type="color"
-              value={activeShape.color.hex}
-              oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
-                color: { ...activeShape.color, hex: (e.target as HTMLInputElement).value }
-              })}
-            />
-            <input
-              type="range"
-              min="0" max="1" step="0.01"
-              value={activeShape.color.opacity}
-              oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
-                color: { ...activeShape.color, opacity: parseFloat((e.target as HTMLInputElement).value) }
-              })}
-            />
-            <span class="param-val">{activeShape.color.opacity.toFixed(2)}</span>
-          </div>
+          <label class="prop-label">Color</label>
+          <GradColorEditor
+            color={activeShape.color}
+            onChange={(c) => onUpdateShape(activeLayer.id, activeShape.id, { color: c })}
+          />
         </div>
 
         <!-- Stroke (rect / ellipse / triangle) -->
@@ -463,26 +581,15 @@
                     : undefined
                 })}
               />
-              {#if activeShape.stroke}
-                <input
-                  type="color"
-                  value={activeShape.stroke.hex}
-                  oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
-                    stroke: { ...activeShape.stroke!, hex: (e.target as HTMLInputElement).value }
-                  })}
-                />
-                <input
-                  type="range" min="0" max="1" step="0.01"
-                  value={activeShape.stroke.opacity}
-                  oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
-                    stroke: { ...activeShape.stroke!, opacity: parseFloat((e.target as HTMLInputElement).value) }
-                  })}
-                />
-                <span class="param-val">{activeShape.stroke.opacity.toFixed(2)}</span>
-              {/if}
             </div>
           </div>
           {#if activeShape.stroke}
+            <GradColorEditor
+              color={{ hex: activeShape.stroke.hex, opacity: activeShape.stroke.opacity, gradient: activeShape.stroke.gradient }}
+              onChange={(c) => onUpdateShape(activeLayer.id, activeShape.id, {
+                stroke: { ...activeShape.stroke!, hex: c.hex, opacity: c.opacity, gradient: c.gradient }
+              })}
+            />
             {@const sk = activeShape.stroke}
             <div class="param-row">
               <label class="param-label" for="stroke-width">Width</label>
@@ -520,6 +627,20 @@
             </div>
           {/if}
         {/if}
+
+        <!-- Rotation slider (all shape types) -->
+        <div class="param-row" style:margin-top="10px">
+          <label class="prop-label" for="shape-rotate">Rotate</label>
+          <div class="param-control">
+            <input id="shape-rotate" type="range" min="-180" max="180" step="1"
+              value={activeShape.transform?.rotate ?? 0}
+              oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
+                transform: { ...activeShape.transform, rotate: parseFloat((e.target as HTMLInputElement).value) }
+              })}
+            />
+            <span class="param-val">{activeShape.transform?.rotate ?? 0}°</span>
+          </div>
+        </div>
 
         <!-- Geometry sliders (rect / ellipse) -->
         {#if activeShape.type === 'rect' || activeShape.type === 'ellipse'}
@@ -593,6 +714,119 @@
     {/if}
   {/if}
 
+  <!-- ── Palettes tab ── -->
+  {#if activeTab === 'palettes'}
+    <!-- Built-in palettes -->
+    <section class="section">
+      <h2 class="section-title">Built-in</h2>
+      <div class="palette-list">
+        {#each palettes.filter(p => p.builtin) as palette}
+          <div class="palette-row">
+            <div class="palette-row-header">
+              <span class="palette-row-name">{palette.name}</span>
+              <span class="palette-row-var">{paletteVarName(palette.name)}</span>
+              <button
+                class="code-tool-btn"
+                title="Copy variable name"
+                onclick={() => navigator.clipboard.writeText(paletteVarName(palette.name))}
+              >copy</button>
+            </div>
+            <div class="palette-swatches">
+              {#each palette.colors as color}
+                <div class="palette-swatch" style:background={color} title={color}></div>
+              {/each}
+            </div>
+          </div>
+        {/each}
+      </div>
+    </section>
+
+    <!-- Custom palettes -->
+    <section class="section">
+      <h2 class="section-title">Custom</h2>
+      <div class="palette-list">
+        {#each palettes.filter(p => !p.builtin) as palette}
+          <div class="palette-card">
+            <div class="palette-card-header">
+              {#if editingPaletteId === palette.id}
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                  class="rename-input"
+                  bind:value={editingPaletteName}
+                  autofocus
+                  onblur={() => {
+                    if (editingPaletteName.trim()) onUpdatePalette(palette.id, { name: editingPaletteName.trim() })
+                    editingPaletteId = null
+                  }}
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLElement).blur()
+                    if (e.key === 'Escape') editingPaletteId = null
+                  }}
+                />
+              {:else}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <span
+                  class="palette-card-name"
+                  title="Double-click to rename"
+                  ondblclick={() => { editingPaletteId = palette.id; editingPaletteName = palette.name }}
+                >{palette.name}</span>
+              {/if}
+              <span class="palette-row-var">{paletteVarName(palette.name)}</span>
+              <button
+                class="code-tool-btn"
+                title="Copy variable name"
+                onclick={() => navigator.clipboard.writeText(paletteVarName(palette.name))}
+              >copy</button>
+              <button
+                class="icon-btn delete-btn"
+                title="Delete palette"
+                onclick={() => onDeletePalette(palette.id)}
+              >×</button>
+            </div>
+            <div class="palette-swatches palette-swatches-edit">
+              {#each palette.colors as color, ci}
+                <div class="palette-swatch-wrap">
+                  <ColorPicker
+                    hex={color}
+                    showOpacity={false}
+                    onChange={(h) => {
+                      const colors = [...palette.colors]
+                      colors[ci] = h
+                      onUpdatePalette(palette.id, { colors })
+                    }}
+                  />
+                  {#if palette.colors.length > 1}
+                    <button
+                      class="swatch-del-btn"
+                      title="Remove color"
+                      onclick={() => onUpdatePalette(palette.id, { colors: palette.colors.filter((_, i) => i !== ci) })}
+                    >×</button>
+                  {/if}
+                </div>
+              {/each}
+              <button
+                class="add-color-btn"
+                title="Add color"
+                onclick={() => onUpdatePalette(palette.id, { colors: [...palette.colors, '#8b5cf6'] })}
+              >+</button>
+            </div>
+          </div>
+        {/each}
+      </div>
+      <button class="add-layer-btn" onclick={onAddPalette}>+ New palette</button>
+    </section>
+
+    <!-- Usage hint -->
+    <section class="section">
+      <p class="palette-hint">Use palette variables in code mode:<br>
+        <code>repeat(8, (i, t) =&gt; &#123;<br>
+          &nbsp;&nbsp;rect(…, Neon[i % Neon.length])<br>
+        &#125;)</code>
+      </p>
+    </section>
+  {/if}
+
   <!-- ── Effects tab ── -->
   {#if activeTab === 'effects'}
     <section class="section">
@@ -659,7 +893,8 @@
     top: 44px;
     right: 0;
     bottom: 0;
-    width: 260px;
+    width: var(--panel-w, 260px);
+    min-width: 220px;
     background: #17171a;
     border-left: 1px solid #2b2b30;
     overflow-y: auto;
@@ -919,46 +1154,180 @@
   .insert-btn:hover { background: #22183a; }
 
   /* ── Code editor ── */
-  .code-section { gap: 8px; }
-
-  .code-editor {
-    width: 100%;
-    min-height: 200px;
-    resize: vertical;
-    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
-    font-size: 11px;
-    line-height: 1.6;
-    color: #c8c8d0;
-    background: #0e0e10;
-    border: 1px solid #2b2b30;
-    border-radius: 5px;
-    padding: 10px;
-    outline: none;
-    tab-size: 2;
-    white-space: pre;
-    overflow-wrap: normal;
-    overflow-x: auto;
+  .code-section {
+    padding: 0;
   }
-  .code-editor:focus { border-color: #8b5cf6; }
 
-  .error-list { display: flex; flex-direction: column; gap: 4px; }
+  .code-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 12px;
+    background: #111114;
+    border-bottom: 1px solid #1e1e22;
+  }
+
+  .code-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: #8b5cf6;
+  }
+
+  .code-color-pick {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-right: 4px;
+  }
+
+  .code-color-hex {
+    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+    font-size: 10px;
+    color: #666672;
+    letter-spacing: .04em;
+  }
+
+  .code-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .code-tool-btn {
+    background: none;
+    border: none;
+    color: #444450;
+    font-size: 10px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: .03em;
+    transition: color .1s, background .1s;
+  }
+  .code-tool-btn:hover { color: #bbb; background: #1f1f26; }
+  .code-tool-btn.active { color: #c4b0f8; }
+
+  .expand-btn { font-size: 13px; }
+
+
+  .code-statusbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    background: #111114;
+    border-bottom: 1px solid #1e1e22;
+    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+    font-size: 10px;
+  }
+  .status-ok   { color: #4ade80; }
+  .status-err  { color: #f87171; }
+  .status-idle { color: #333340; }
+  .status-lines { margin-left: auto; color: #333340; }
+
+  .error-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 6px 12px;
+    background: #110808;
+    border-bottom: 1px solid #1e1e22;
+  }
 
   .error-line {
     font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
-    font-size: 11px;
+    font-size: 10px;
     color: #f87171;
-    background: #1c0a0a;
-    border: 1px solid #5c1a1a;
-    border-radius: 4px;
-    padding: 5px 8px;
+    padding: 3px 0;
     word-break: break-all;
+    border-bottom: 1px solid #1a0c0c;
+  }
+  .error-line:last-child { border-bottom: none; }
+
+  /* ── API Reference ── */
+  .api-ref {
+    background: #0e0e10;
   }
 
-  .code-hint {
-    font-size: 11px;
-    color: #555560;
-    text-align: right;
+  .api-ref-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 12px;
+    border-top: 1px solid #1e1e22;
+    color: #444450;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    cursor: pointer;
+    transition: color .1s, background .1s;
+    user-select: none;
   }
+  .api-ref-toggle:hover { color: #888890; background: #111114; }
+
+  .api-chevron { font-size: 9px; }
+
+  .api-ref-body {
+    padding: 6px 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .api-snip {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 5px 8px;
+    background: #111114;
+    border: 1px solid #1e1e22;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color .1s, background .1s;
+  }
+  .api-snip:hover { border-color: #8b5cf6; background: #17141f; }
+
+  .api-snip-name {
+    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    color: #a78bfa;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .api-snip-sig {
+    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+    font-size: 9px;
+    color: #333340;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .api-consts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 4px;
+  }
+
+  .api-const-btn {
+    padding: 2px 7px;
+    background: #111114;
+    border: 1px solid #1e1e22;
+    border-radius: 3px;
+    color: #555560;
+    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+    font-size: 10px;
+    cursor: pointer;
+    transition: border-color .1s, color .1s, background .1s;
+  }
+  .api-const-btn:hover { border-color: #6d28d9; color: #c4b0f8; background: #17141f; }
 
   /* ── Effects header ── */
   .effects-header {
@@ -1053,13 +1422,8 @@
     gap: 8px;
   }
 
-  input[type="color"] {
-    width: 28px;
-    height: 20px;
-    padding: 0;
-    border: 1px solid #2b2b30;
-    border-radius: 3px;
-    background: none;
+  input[type="checkbox"] {
+    accent-color: #8b5cf6;
     cursor: pointer;
     flex-shrink: 0;
   }
@@ -1146,5 +1510,164 @@
     width: 34px;
     text-align: right;
     flex-shrink: 0;
+  }
+
+  /* ── Palette tab ── */
+  .palette-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .palette-row {
+    background: #111114;
+    border: 1px solid #2b2b30;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .palette-row-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #1e1e22;
+  }
+
+  .palette-row-name {
+    font-size: 12px;
+    color: #c8c8d0;
+    font-weight: 500;
+    flex: 1;
+  }
+
+  .palette-row-var {
+    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+    font-size: 10px;
+    color: #666672;
+  }
+
+  .palette-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    padding: 8px;
+  }
+
+  .palette-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,.06);
+    flex-shrink: 0;
+    cursor: default;
+  }
+
+  /* Custom palette cards */
+  .palette-card {
+    background: #111114;
+    border: 1px solid #2b2b30;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .palette-card-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #1e1e22;
+  }
+
+  .palette-card-name {
+    font-size: 12px;
+    color: #c8c8d0;
+    font-weight: 500;
+    flex: 1;
+    cursor: text;
+  }
+  .palette-card-name:hover { color: #fff; }
+
+  .palette-swatches-edit {
+    align-items: center;
+  }
+
+  .palette-swatch-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .swatch-del-btn {
+    background: none;
+    border: none;
+    color: #444450;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 1px 2px;
+    border-radius: 2px;
+    transition: color .1s;
+    flex-shrink: 0;
+  }
+  .swatch-del-btn:hover { color: #f87171; }
+
+  .add-color-btn {
+    width: 22px;
+    height: 22px;
+    background: none;
+    border: 1px dashed #333340;
+    border-radius: 3px;
+    color: #444450;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: border-color .12s, color .12s;
+  }
+  .add-color-btn:hover { border-color: #8b5cf6; color: #c4b0f8; }
+
+  /* Palette variable chips in API ref */
+  .palette-var-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .palette-var-dots {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+  }
+
+  .palette-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Usage hint */
+  .palette-hint {
+    font-size: 11px;
+    color: #555560;
+    line-height: 1.7;
+  }
+  .palette-hint code {
+    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+    font-size: 10px;
+    color: #666672;
+    display: block;
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: #0d0d0f;
+    border-radius: 4px;
+    border: 1px solid #1e1e22;
   }
 </style>

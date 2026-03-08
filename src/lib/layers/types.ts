@@ -1,17 +1,31 @@
 export type ShapeType = 'rect' | 'ellipse' | 'line' | 'curve' | 'triangle'
 
-export interface ShapeColor  { hex: string; opacity: number }
+export interface ColorStop    { hex: string; opacity: number; pos: number }
+export interface LinearGradient { type: 'linear'; angle: number; stops: ColorStop[] }
+export interface RadialGradient { type: 'radial'; cx: number; cy: number; stops: ColorStop[] }
+export type Gradient = LinearGradient | RadialGradient
+
+export interface ShapeColor  { hex: string; opacity: number; gradient?: Gradient }
 export interface ShapeStroke {
   hex: string
   opacity: number
   width: number                              // artW-fraction
   align?: 'center' | 'inner' | 'outer'
   join?:  'miter'  | 'round' | 'bevel'
+  gradient?: Gradient
 }
 
 export interface ShapeGeom {
   x: number; y: number   // center, normalized 0–1
   w: number; h: number   // extents, normalized 0–1
+}
+
+export interface ShapeTransform {
+  rotate?: number    // degrees, clockwise, around shape center
+  scaleX?: number    // default 1
+  scaleY?: number    // default 1
+  skewX?:  number    // degrees
+  skewY?:  number    // degrees
 }
 
 export interface Shape {
@@ -24,6 +38,7 @@ export interface Shape {
   // line: [x1,y1, x2,y2]  curve: [x1,y1, cx,cy, x2,y2]  triangle: [x1,y1, x2,y2, x3,y3]
   pts?: number[]
   strokeWidth?: number   // artW-fraction; used by line and curve
+  transform?: ShapeTransform
 }
 
 export interface Layer {

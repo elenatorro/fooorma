@@ -12,15 +12,60 @@
   import RightPanel from './components/RightPanel.svelte'
   import StatusBar  from './components/StatusBar.svelte'
   import Viewport   from './components/Viewport.svelte'
+  import { serializeProject, parseProject } from './lib/persist/index'
+  import { BUILTIN_PALETTES } from './lib/palettes/index'
+  import type { Palette } from './lib/palettes/index'
+
+  // ── Autosave / restore ─────────────────────────────────────────────────────
+  const STORAGE_KEY = 'forma_autosave'
+
+  function loadAutosave() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (!raw) return null
+      const parsed = parseProject(raw)
+      const activeIdx = parseInt(localStorage.getItem(STORAGE_KEY + '_idx') ?? '')
+      const idx = isNaN(activeIdx) ? parsed.layers.length - 1 : Math.min(activeIdx, parsed.layers.length - 1)
+      return { ...parsed, customPalettes: parsed.customPalettes ?? [], activeIdx: Math.max(0, idx) }
+    } catch {
+      return null
+    }
+  }
+
+  const _saved = loadAutosave()
 
   // ── Artboard ──────────────────────────────────────────────────────────────
-  let artW = $state(794)
-  let artH = $state(1123)
+  let artW = $state(_saved?.artW ?? 794)
+  let artH = $state(_saved?.artH ?? 1123)
 
   // ── Zoom / pan ─────────────────────────────────────────────────────────────
   let zoom = $state(1)
   let panX = $state(0)
   let panY = $state(0)
+
+  // ── Panel width (resizable) ─────────────────────────────────────────────────
+  let panelWidth = $state(260)
+  let resizeOrigin: { x: number; w: number } | null = null
+
+  function startResize(e: PointerEvent) {
+    resizeOrigin = { x: e.clientX, w: panelWidth }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+
+  function doResize(e: PointerEvent) {
+    if (!resizeOrigin) return
+    const delta = resizeOrigin.x - e.clientX
+    panelWidth = Math.max(220, Math.min(Math.round(window.innerWidth * 0.75), resizeOrigin.w + delta))
+    updateVP()
+  }
+
+  function endResize() {
+    resizeOrigin = null
+  }
+
+  $effect(() => {
+    document.documentElement.style.setProperty('--panel-w', `${panelWidth}px`)
+  })
 
   // Computed viewport size (minus bars)
   let vpW = $state(0)
@@ -58,11 +103,32 @@
 
   // ── Layers ─────────────────────────────────────────────────────────────────
   const _initId = crypto.randomUUID()
-  let layers = $state<Layer[]>([{ id: _initId, name: 'Layer 1', visible: true, mode: 'manual', shapes: [], query: '' }])
-  let activeLayerId = $state<string | null>(_initId)
+  let layers = $state<Layer[]>(_saved?.layers ?? [{ id: _initId, name: 'Layer 1', visible: true, mode: 'manual', shapes: [], query: '' }])
+  const _initActiveId = _saved
+    ? (_saved.layers[_saved.activeIdx]?.id ?? _saved.layers[_saved.layers.length - 1]?.id ?? null)
+    : _initId
+  let activeLayerId = $state<string | null>(_initActiveId)
   let activeShapeId = $state<string | null>(null)
-  let activeTab = $state<'layers' | 'effects'>('layers')
+  let activeTab = $state<'layers' | 'effects' | 'palettes'>('layers')
   let effectsEnabled = $state(false)
+
+  // ── Palettes ───────────────────────────────────────────────────────────────
+  let customPalettes = $state<Palette[]>(_saved?.customPalettes ?? [])
+
+  // ── Autosave effect ────────────────────────────────────────────────────────
+  let _saveTimer: ReturnType<typeof setTimeout> | undefined
+  $effect(() => {
+    const data = serializeProject({ layers, artW, artH, customPalettes })
+    const idx  = layers.findIndex(l => l.id === activeLayerId)
+    clearTimeout(_saveTimer)
+    _saveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, data)
+        localStorage.setItem(STORAGE_KEY + '_idx', String(idx < 0 ? layers.length - 1 : idx))
+      } catch { /* storage full or unavailable */ }
+    }, 500)
+  })
+  const allPalettes  = $derived([...BUILTIN_PALETTES, ...customPalettes])
 
   const activeLayerShapes = $derived(
     layers.find(l => l.id === activeLayerId)?.shapes ?? []
@@ -72,7 +138,7 @@
   const resolvedLayers = $derived(
     layers.map(layer => {
       if (layer.mode !== 'code') return layer
-      const { shapes } = evaluateQuery(layer.query)
+      const { shapes } = evaluateQuery(layer.query, artW, artH, allPalettes)
       return { ...layer, shapes }
     })
   )
@@ -141,7 +207,7 @@
         const query = l.query.trim() ? l.query : shapesToCode(l.shapes)
         return { ...l, mode, query }
       } else {
-        const shapes = l.query.trim() ? evaluateQuery(l.query).shapes : l.shapes
+        const shapes = l.query.trim() ? evaluateQuery(l.query, artW, artH, allPalettes).shapes : l.shapes
         return { ...l, mode, shapes }
       }
     })
@@ -203,6 +269,23 @@
     } : l)
   }
 
+  // ── Palette handlers ───────────────────────────────────────────────────────
+  function handleAddPalette() {
+    customPalettes = [...customPalettes, {
+      id: crypto.randomUUID(),
+      name: `Palette ${customPalettes.length + 1}`,
+      colors: ['#8b5cf6', '#4ecdc4', '#f7c68a'],
+    }]
+  }
+
+  function handleUpdatePalette(id: string, update: Partial<Palette>) {
+    customPalettes = customPalettes.map(p => p.id === id ? { ...p, ...update } : p)
+  }
+
+  function handleDeletePalette(id: string) {
+    customPalettes = customPalettes.filter(p => p.id !== id)
+  }
+
   // ── Canvas 2D ──────────────────────────────────────────────────────────────
   let canvas2d: HTMLCanvasElement | null = null
   let ctx2d: CanvasRenderingContext2D | null = null
@@ -237,7 +320,7 @@
   })
 
   function updateVP() {
-    vpW = window.innerWidth - 260
+    vpW = window.innerWidth - panelWidth
     vpH = window.innerHeight - 44 - 36
   }
 
@@ -318,6 +401,33 @@
     fit()
   }
 
+  // ── Save / Load ────────────────────────────────────────────────────────────
+  function handleSave() {
+    const content = serializeProject({ layers, artW, artH, customPalettes })
+    const blob = new Blob([content], { type: 'text/plain' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = 'project.forma'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleLoad(file: File) {
+    const content = await file.text()
+    try {
+      const { layers: newLayers, artW: newW, artH: newH, customPalettes: newPalettes } = parseProject(content)
+      layers          = newLayers
+      customPalettes  = newPalettes ?? []
+      activeLayerId   = newLayers[newLayers.length - 1]?.id ?? null
+      activeShapeId   = null
+      if (newW !== artW || newH !== artH) await handleSizeChange(newW, newH)
+      else { updateVP(); fit() }
+    } catch (e) {
+      console.error('Failed to load file:', e)
+    }
+  }
+
   // ── Export ─────────────────────────────────────────────────────────────────
   async function handleExport() {
     const offscreen = document.createElement('canvas')
@@ -380,6 +490,8 @@
   {artH}
   onSizeChange={handleSizeChange}
   onExport={handleExport}
+  onSave={handleSave}
+  onLoad={handleLoad}
 />
 
 <Viewport
@@ -410,13 +522,15 @@
   activeSketch={activeSketch}
   {effectsEnabled}
   params={params}
+  {artW}
+  {artH}
   {layers}
   {activeLayerId}
   {activeShapeId}
   {activeTab}
   onSketchChange={handleSketchChange}
   onParamChange={handleParamChange}
-  onTabChange={(t: 'layers' | 'effects') => { activeTab = t }}
+  onTabChange={(t: 'layers' | 'effects' | 'palettes') => { activeTab = t }}
   onAddLayer={handleAddLayer}
   onSelectLayer={handleSelectLayer}
   onDeleteLayer={handleDeleteLayer}
@@ -432,6 +546,10 @@
   onUpdateShape={handleUpdateShape}
   onUpdateGeom={handleUpdateGeom}
   onToggleEffects={() => effectsEnabled = !effectsEnabled}
+  palettes={allPalettes}
+  onAddPalette={handleAddPalette}
+  onUpdatePalette={handleUpdatePalette}
+  onDeletePalette={handleDeletePalette}
 />
 
 <StatusBar
@@ -441,6 +559,18 @@
   onFit={fit}
   onReset={() => { zoom = 1; panX = 0; panY = 0 }}
 />
+
+<!-- Panel resize handle -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  class="panel-resize-handle"
+  style:right="{panelWidth - 3}px"
+  onpointerdown={startResize}
+  onpointermove={doResize}
+  onpointerup={endResize}
+  ondblclick={() => { panelWidth = Math.round(window.innerWidth * 0.5); updateVP() }}
+  title="Drag to resize · Double-click for 50%"
+></div>
 
 <style>
   :global(*, *::before, *::after) { box-sizing: border-box; margin: 0; padding: 0; }
@@ -453,4 +583,17 @@
   :global(::-webkit-scrollbar) { width: 6px; }
   :global(::-webkit-scrollbar-track) { background: transparent; }
   :global(::-webkit-scrollbar-thumb) { background: #2b2b30; border-radius: 3px; }
+
+  .panel-resize-handle {
+    position: fixed;
+    top: 44px;
+    bottom: 36px;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 95;
+    background: transparent;
+    transition: background .15s;
+  }
+  .panel-resize-handle:hover { background: rgba(139, 92, 246, 0.2); }
+  .panel-resize-handle:active { background: rgba(139, 92, 246, 0.35); }
 </style>
