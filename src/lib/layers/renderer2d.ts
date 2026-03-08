@@ -122,26 +122,30 @@ function applyNoise(
   ctx.restore()
 }
 
+// applyWarp operates on physical pixels of dc (which has the same transform as the main ctx).
+// bx/by/bw/bh are in artboard pixels; pixelScale converts to physical pixels.
+// freq is in cycles per artboard pixel — zoom-independent visual frequency.
 function applyWarp(
   ctx: CanvasRenderingContext2D,
   bx: number, by: number, bw: number, bh: number,
   amount: number, freq: number,
   pixelScale: number,
 ): void {
-  // Convert logical coords → physical canvas pixels
   const pAmount = amount * pixelScale
   const pad = Math.ceil(pAmount)
   const rx = Math.max(0, Math.floor(bx * pixelScale) - pad)
   const ry = Math.max(0, Math.floor(by * pixelScale) - pad)
-  const rw = Math.ceil(bw * pixelScale) + pad * 2
-  const rh = Math.ceil(bh * pixelScale) + pad * 2
+  const rw = Math.min(Math.ceil(bw * pixelScale) + pad * 2, ctx.canvas.width  - rx)
+  const rh = Math.min(Math.ceil(bh * pixelScale) + pad * 2, ctx.canvas.height - ry)
+  if (rw <= 0 || rh <= 0) return
   const src = ctx.getImageData(rx, ry, rw, rh)
   const dst = new ImageData(rw, rh)
+  const TAU = Math.PI * 2
   for (let y = 0; y < rh; y++) {
+    // Divide by pixelScale → artboard-space coords for sin → zoom-independent frequency
+    const dx = Math.round(pAmount * Math.sin((ry + y) / pixelScale * freq * TAU))
     for (let x = 0; x < rw; x++) {
-      // freq is in cycles/logical-px; divide physical coords back to logical
-      const dx = Math.round(pAmount * Math.sin((ry + y) / pixelScale * freq * Math.PI * 2))
-      const dy = Math.round(pAmount * Math.sin((rx + x) / pixelScale * freq * Math.PI * 2))
+      const dy = Math.round(pAmount * Math.sin((rx + x) / pixelScale * freq * TAU))
       const sx = Math.max(0, Math.min(rw - 1, x + dx))
       const sy = Math.max(0, Math.min(rh - 1, y + dy))
       const si = (sy * rw + sx) * 4
@@ -155,7 +159,7 @@ function applyWarp(
   ctx.putImageData(dst, rx, ry)
 }
 
-// Offscreen canvas reused for warp isolation
+// Offscreen canvas at physical resolution, matching main ctx transform for warp isolation.
 let _warpCanvas: HTMLCanvasElement | null = null
 let _warpCtx: CanvasRenderingContext2D | null = null
 
@@ -180,10 +184,9 @@ export function renderLayers2D(
   artH: number,
   clear = true,
 ): void {
-  // Physical pixels per logical pixel (zoom * devicePixelRatio).
-  // getImageData/putImageData always work in physical pixel coords.
   const pixelScale = ctx.getTransform().a || 1
-
+  const physW = ctx.canvas.width
+  const physH = ctx.canvas.height
   if (clear) ctx.clearRect(0, 0, artW, artH)
 
   for (const layer of layers) {
@@ -211,13 +214,14 @@ export function renderLayers2D(
       const noiseFx  = effects?.find((e: ShapeEffect) => e.type === 'noise')
       const warpFx   = effects?.find((e: ShapeEffect) => e.type === 'warp')
 
-      // For warp: draw to an isolated offscreen canvas so warp only distorts
-      // the shape's own pixels, then composite onto the main canvas.
+      // For warp: draw to an isolated offscreen canvas (physical resolution, same
+      // transform as ctx) so warp only distorts the shape's own pixels, then composite.
       let dc: CanvasRenderingContext2D
       if (warpFx) {
-        dc = getWarpCtx(ctx.canvas.width, ctx.canvas.height)
-        dc.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
-        dc.setTransform(ctx.getTransform())
+        dc = getWarpCtx(physW, physH)
+        dc.setTransform(1, 0, 0, 1, 0, 0)      // identity so clearRect covers full physical canvas
+        dc.clearRect(0, 0, physW, physH)
+        dc.setTransform(ctx.getTransform())     // match main ctx scale for shape drawing
       } else {
         dc = ctx
       }
@@ -229,6 +233,13 @@ export function renderLayers2D(
           dc.rect(left, top, pw, ph)
         } else if (type === 'ellipse') {
           dc.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2)
+        } else if (type === 'arc') {
+          const p = shape.pts!
+          const startRad = p[0] * Math.PI / 180
+          const endRad   = p[1] * Math.PI / 180
+          dc.moveTo(px, py)
+          dc.arc(px, py, pw / 2, startRad, endRad)
+          dc.closePath()
         } else if (type === 'triangle') {
           const p = shape.pts!
           dc.moveTo(p[0] * artW, p[1] * artH)
@@ -336,6 +347,11 @@ export function renderLayers2D(
             dc.rect(left, top, pw, ph)
           } else if (type === 'ellipse') {
             dc.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2)
+          } else if (type === 'arc') {
+            const p = shape.pts!
+            dc.moveTo(px, py)
+            dc.arc(px, py, pw / 2, p[0] * Math.PI / 180, p[1] * Math.PI / 180)
+            dc.closePath()
           } else if (type === 'triangle') {
             const p = shape.pts!
             dc.moveTo(p[0] * artW, p[1] * artH)
@@ -381,12 +397,11 @@ export function renderLayers2D(
             ;[wl, wt, ww, wh] = [px - rw / 2, py - rh / 2, rw, rh]
           }
         }
-        // Warp operates on the offscreen (shape-only pixels on transparent bg)
         dc.restore()
         applyWarp(dc, wl, wt, ww, wh, warpFx.amount ?? 8, warpFx.freq ?? 0.05, pixelScale)
-        // Composite the warped offscreen onto the main canvas
+        // Composite at 1:1 physical pixels (no zoom scaling applied to the drawImage)
         ctx.save()
-        ctx.setTransform(1, 0, 0, 1, 0, 0)  // reset to physical pixel coords for drawImage
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
         ctx.drawImage(_warpCanvas!, 0, 0)
         ctx.restore()
         continue

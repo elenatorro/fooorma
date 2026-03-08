@@ -1,9 +1,5 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
-  import { createRenderer }    from './lib/renderer/index'
-  import type { Renderer }     from './lib/renderer/types'
-  import { SKETCHES }          from './lib/sketches/index'
-  import type { SketchDef }    from './lib/sketches/types'
   import type { Layer, Shape, ShapeGeom } from './lib/layers/types'
   import { renderLayers2D }    from './lib/layers/renderer2d'
   import { evaluateQuery, shapesToCode } from './lib/query/index'
@@ -84,20 +80,37 @@
     zoom = clamp(zoom * factor, 0.05, 20)
   }
 
-  // ── Sketch / params ────────────────────────────────────────────────────────
-  let activeSketch = $state<SketchDef>(SKETCHES[0])
+  // ── History (undo / redo) ──────────────────────────────────────────────────
+  const MAX_HISTORY = 50
+  let past   = $state<Layer[][]>([])
+  let future = $state<Layer[][]>([])
 
-  // params: id → current value
-  let params = $state<Record<string, number>>(defaultParams(SKETCHES[0]))
-
-  function defaultParams(s: SketchDef): Record<string, number> {
-    return Object.fromEntries(s.params.map(p => [p.id, p.default]))
+  function snapshot(): Layer[] {
+    return JSON.parse(JSON.stringify(layers)) as Layer[]
   }
 
-  function paramsToArray(s: SketchDef, p: Record<string, number>): Float32Array {
-    const a = new Float32Array(8)
-    s.params.forEach((def, i) => { a[i] = p[def.id] ?? def.default })
-    return a
+  function commit() {
+    past   = [...past.slice(-(MAX_HISTORY - 1)), snapshot()]
+    future = []
+  }
+
+  function undo() {
+    if (!past.length) return
+    future = [snapshot(), ...future.slice(0, MAX_HISTORY - 1)]
+    layers = past[past.length - 1]
+    past   = past.slice(0, -1)
+    // keep activeShapeId valid
+    const activeLayer = layers.find(l => l.id === activeLayerId)
+    if (activeShapeId && !activeLayer?.shapes.some(s => s.id === activeShapeId)) activeShapeId = null
+  }
+
+  function redo() {
+    if (!future.length) return
+    past   = [...past.slice(-(MAX_HISTORY - 1)), snapshot()]
+    layers = future[0]
+    future = future.slice(1)
+    const activeLayer = layers.find(l => l.id === activeLayerId)
+    if (activeShapeId && !activeLayer?.shapes.some(s => s.id === activeShapeId)) activeShapeId = null
   }
 
   // ── Layers ─────────────────────────────────────────────────────────────────
@@ -109,7 +122,6 @@
   let activeLayerId = $state<string | null>(_initActiveId)
   let activeShapeId = $state<string | null>(null)
   let activeTab = $state<'layers' | 'effects' | 'palettes'>('layers')
-  let effectsEnabled = $state(false)
 
   // ── Palettes ───────────────────────────────────────────────────────────────
   let customPalettes = $state<Palette[]>(_saved?.customPalettes ?? [])
@@ -145,6 +157,7 @@
   )
 
   function handleAddLayer() {
+    commit()
     const id = crypto.randomUUID()
     const n  = layers.length + 1
     layers = [...layers, { id, name: `Layer ${n}`, visible: true, mode: 'manual', shapes: [], query: '' }]
@@ -158,6 +171,7 @@
   }
 
   function handleDeleteLayer(id: string) {
+    commit()
     const layer = layers.find(l => l.id === id)
     if (layer && activeShapeId !== null && layer.shapes.some(s => s.id === activeShapeId)) {
       activeShapeId = null
@@ -167,15 +181,18 @@
   }
 
   function handleToggleVisible(id: string) {
+    commit()
     layers = layers.map(l => l.id === id ? { ...l, visible: !l.visible } : l)
   }
 
   function handleRenameLayer(id: string, name: string) {
+    commit()
     layers = layers.map(l => l.id === id ? { ...l, name } : l)
   }
 
   function handleMoveLayerTo(srcId: string, targetId: string) {
     if (srcId === targetId) return
+    commit()
     const srcIdx    = layers.findIndex(l => l.id === srcId)
     const targetIdx = layers.findIndex(l => l.id === targetId)
     const next = [...layers]
@@ -185,10 +202,11 @@
   }
 
   function handleUpdateLayerBg(id: string, bgColor: string | undefined) {
+    commit()
     layers = layers.map(l => l.id === id ? { ...l, bgColor } : l)
   }
 
-  // Update query text while staying in code mode
+  // Update query text while staying in code mode (CM handles its own undo internally)
   function handleSetQuery(id: string, query: string) {
     layers = layers.map(l => l.id === id ? { ...l, query } : l)
   }
@@ -197,6 +215,7 @@
   //   manual → code: generate code from shapes if query is empty
   //   code → manual: bake evaluated shapes into layer.shapes
   function handleSetMode(id: string, mode: 'manual' | 'code') {
+    commit()
     layers = layers.map(l => {
       if (l.id !== id || l.mode === mode) return l
       if (mode === 'code') {
@@ -210,7 +229,12 @@
     activeShapeId = null
   }
 
+  // Commit once per drag (tracked by shape id to avoid committing on every mousemove)
+  let _lastGeomCommitKey = ''
+  $effect(() => { _lastGeomCommitKey = activeShapeId ?? '' })
+
   function handleStartDraw(layerId: string, initialGeom: ShapeGeom): string {
+    commit()
     const shapeId = crypto.randomUUID()
     layers = layers.map(l => l.id === layerId ? {
       ...l,
@@ -222,10 +246,12 @@
       }],
     } : l)
     activeShapeId = shapeId
+    _lastGeomCommitKey = shapeId
     return shapeId
   }
 
   function handleAddShape(layerId: string) {
+    commit()
     const shapeId = crypto.randomUUID()
     layers = layers.map(l => l.id === layerId ? {
       ...l,
@@ -244,6 +270,7 @@
   }
 
   function handleDeleteShape(layerId: string, shapeId: string) {
+    commit()
     layers = layers.map(l => l.id === layerId ? {
       ...l,
       shapes: l.shapes.filter(s => s.id !== shapeId),
@@ -252,6 +279,7 @@
   }
 
   function handleUpdateShape(layerId: string, shapeId: string, update: Partial<Shape>) {
+    commit()
     layers = layers.map(l => l.id === layerId ? {
       ...l,
       shapes: l.shapes.map(s => s.id === shapeId ? { ...s, ...update } : s),
@@ -259,6 +287,8 @@
   }
 
   function handleUpdateGeom(layerId: string, shapeId: string, geom: ShapeGeom) {
+    const key = `${layerId}:${shapeId}`
+    if (key !== _lastGeomCommitKey) { commit(); _lastGeomCommitKey = key }
     layers = layers.map(l => l.id === layerId ? {
       ...l,
       shapes: l.shapes.map(s => s.id === shapeId ? { ...s, geom } : s),
@@ -285,35 +315,15 @@
   // ── Canvas 2D ──────────────────────────────────────────────────────────────
   let canvas2d: HTMLCanvasElement | null = null
   let ctx2d: CanvasRenderingContext2D | null = null
+  let rafId: number
 
   function initCanvas2D(c: HTMLCanvasElement) {
     canvas2d = c
     ctx2d    = c.getContext('2d')
-  }
-
-  // ── Renderer ───────────────────────────────────────────────────────────────
-  let renderer: Renderer | null = null
-  let gpuCanvas: HTMLCanvasElement | null = null
-  let rafId: number
-  let rendererType = $state('')
-
-  async function initRenderer(canvas: HTMLCanvasElement) {
-    gpuCanvas = canvas
-    canvas.style.display = effectsEnabled ? 'block' : 'none'
-    renderer = await createRenderer(canvas, activeSketch, paramsToArray(activeSketch, params))
-    rendererType = renderer.type
-    renderer.resize(artW, artH)
-    rafId = requestAnimationFrame(loop)
-
-    // Measure viewport and fit
+    rafId    = requestAnimationFrame(loop)
     updateVP()
     fit()
   }
-
-  // Keep GPU canvas visibility in sync with effectsEnabled
-  $effect(() => {
-    if (gpuCanvas) gpuCanvas.style.display = effectsEnabled ? 'block' : 'none'
-  })
 
   function updateVP() {
     vpW = window.innerWidth - panelWidth
@@ -321,7 +331,6 @@
   }
 
   function loop(time: number) {
-    if (effectsEnabled) renderer?.render(time)
     if (ctx2d && canvas2d) {
       // Scale canvas buffer to match physical pixels at current zoom,
       // so shapes stay crisp regardless of zoom level.
@@ -374,27 +383,22 @@
     ctx.restore()
   }
 
-  // ── Sketch change ──────────────────────────────────────────────────────────
-  async function handleSketchChange(s: SketchDef) {
-    activeSketch = s
-    params = defaultParams(s)
-    await renderer?.setSketch(s, paramsToArray(s, params))
-  }
-
-  // ── Param change ───────────────────────────────────────────────────────────
-  function handleParamChange(id: string, value: number) {
-    params[id] = value
-    renderer?.setParams(paramsToArray(activeSketch, params))
-  }
-
   // ── Canvas size change ─────────────────────────────────────────────────────
   async function handleSizeChange(w: number, h: number) {
     artW = w
     artH = h
     await new Promise(r => setTimeout(r, 0))
-    renderer?.resize(w, h)
     updateVP()
     fit()
+  }
+
+  // ── New ────────────────────────────────────────────────────────────────────
+  function handleNew() {
+    const id = crypto.randomUUID()
+    layers        = [{ id, name: 'Layer 1', visible: true, mode: 'manual', shapes: [], query: '' }]
+    activeLayerId = id
+    activeShapeId = null
+    past = []; future = []
   }
 
   // ── Save / Load ────────────────────────────────────────────────────────────
@@ -417,6 +421,7 @@
       customPalettes  = newPalettes ?? []
       activeLayerId   = newLayers[newLayers.length - 1]?.id ?? null
       activeShapeId   = null
+      past = []; future = []
       if (newW !== artW || newH !== artH) await handleSizeChange(newW, newH)
       else { updateVP(); fit() }
     } catch (e) {
@@ -425,41 +430,42 @@
   }
 
   // ── Export ─────────────────────────────────────────────────────────────────
-  async function handleExport() {
-    const offscreen = document.createElement('canvas')
-    offscreen.width  = artW
-    offscreen.height = artH
-    const octx = offscreen.getContext('2d')!
-
-    // GPU background
-    if (effectsEnabled && renderer) {
-      const gpuBlob = await renderer.exportPNG()
-      octx.drawImage(await createImageBitmap(gpuBlob), 0, 0, artW, artH)
-    }
-
-    // 2D overlay — read directly from the live canvas (already rendered by RAF loop)
-    if (canvas2d && canvas2d.width > 0 && canvas2d.height > 0) {
-      const dpr  = window.devicePixelRatio || 1
-      const srcW = Math.round(artW * zoom * dpr)
-      const srcH = Math.round(artH * zoom * dpr)
-      octx.drawImage(canvas2d, 0, 0, srcW, srcH, 0, 0, artW, artH)
-    }
-
-    const blob = await new Promise<Blob>(res =>
-      offscreen.toBlob(b => res(b!), 'image/png')
-    )
-    const url = URL.createObjectURL(blob)
-    const a   = document.createElement('a')
-    a.href     = url
-    a.download = `forma-${activeSketch.id}-${Date.now()}.png`
+  function handleExport() {
+    const canvas = document.createElement('canvas')
+    canvas.width  = artW
+    canvas.height = artH
+    const ctx = canvas.getContext('2d')!
+    renderLayers2D(ctx, resolvedLayers, artW, artH)
+    // Fill white behind all rendered content (destination-over draws src under dst)
+    ctx.globalCompositeOperation = 'destination-over'
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, artW, artH)
+    ctx.globalCompositeOperation = 'source-over'
+    const a = document.createElement('a')
+    a.href     = canvas.toDataURL('image/png')
+    a.download = `forma-${Date.now()}.png`
     a.click()
-    URL.revokeObjectURL(url)
   }
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   function handleKeyDown(e: KeyboardEvent) {
     const el = e.target as HTMLElement
-    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return
+    const inEditor = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable || !!el.closest?.('.cm-editor')
+    if (inEditor) return
+
+    const mod = e.ctrlKey || e.metaKey
+
+    // Undo / redo
+    if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
+    if (mod && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) { e.preventDefault(); redo(); return }
+
+    // Cut (delete selected shape)
+    if (mod && e.key === 'x' && activeShapeId) {
+      e.preventDefault()
+      const layer = layers.find(l => l.id === activeLayerId)
+      if (layer) handleDeleteShape(layer.id, activeShapeId)
+      return
+    }
 
     if (e.key === 'Escape') { activeShapeId = null }
     if (e.key === '0') { e.preventDefault(); fit() }
@@ -481,7 +487,6 @@
 
   onDestroy(() => {
     cancelAnimationFrame(rafId)
-    renderer?.destroy()
   })
 </script>
 
@@ -490,6 +495,7 @@
   {artH}
   onSizeChange={handleSizeChange}
   onExport={handleExport}
+  onNew={handleNew}
   onSave={handleSave}
   onLoad={handleLoad}
 />
@@ -502,7 +508,6 @@
   {panY}
   activeLayerId={drawableLayerId}
   {activeLayerShapes}
-  onCanvas={initRenderer}
   onCanvas2d={initCanvas2D}
   onZoomChange={(z, px, py) => { zoom = z; panX = px; panY = py }}
   onPanChange={(px, py) => { panX = px; panY = py }}
@@ -511,6 +516,8 @@
   onDeselect={() => { activeShapeId = null }}
   onUpdateGeom={handleUpdateGeom}
   onUpdatePts={(layerId, shapeId, pts) => {
+    const key = `pts:${layerId}:${shapeId}`
+    if (key !== _lastGeomCommitKey) { commit(); _lastGeomCommitKey = key }
     layers = layers.map(l => l.id === layerId ? {
       ...l, shapes: l.shapes.map(s => s.id === shapeId ? { ...s, pts } : s)
     } : l)
@@ -518,19 +525,13 @@
 />
 
 <RightPanel
-  sketches={SKETCHES}
-  activeSketch={activeSketch}
-  {effectsEnabled}
-  params={params}
   {artW}
   {artH}
   {layers}
   {activeLayerId}
   {activeShapeId}
   {activeTab}
-  onSketchChange={handleSketchChange}
-  onParamChange={handleParamChange}
-  onTabChange={(t: 'layers' | 'effects' | 'palettes') => { activeTab = t }}
+  onTabChange={(t: 'layers' | 'effects' | 'palettes') => activeTab = t}
   onAddLayer={handleAddLayer}
   onSelectLayer={handleSelectLayer}
   onDeleteLayer={handleDeleteLayer}
@@ -545,7 +546,6 @@
   onDeleteShape={handleDeleteShape}
   onUpdateShape={handleUpdateShape}
   onUpdateGeom={handleUpdateGeom}
-  onToggleEffects={() => effectsEnabled = !effectsEnabled}
   palettes={allPalettes}
   onAddPalette={handleAddPalette}
   onUpdatePalette={handleUpdatePalette}
@@ -554,7 +554,6 @@
 
 <StatusBar
   {zoom}
-  {rendererType}
   onZoom={stepZoom}
   onFit={fit}
   onReset={() => { zoom = 1; panX = 0; panY = 0 }}

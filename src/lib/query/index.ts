@@ -1,5 +1,4 @@
 import type { ColorStop, Gradient, LinearGradient, RadialGradient, Shape, ShapeEffect, ShapeStroke, ShapeTransform, ShapeType } from '../layers/types'
-import { paletteVarName } from '../palettes/index'
 
 /** Serialize manual shapes to equivalent query code. */
 export function shapesToCode(shapes: Shape[]): string {
@@ -83,6 +82,11 @@ export function shapesToCode(shapes: Shape[]): string {
     const opArg    = gradient ? '1' : String(f(opacity))
     const tr  = transform ? `, ${transformStr(transform)}` : ''
     const efx = effects?.length ? ', ' + effects.map(effectStr).join(', ') : ''
+    if (type === 'arc' && pts) {
+      const r  = f(w / 2)
+      const sk = stroke ? `, ${strokeStr(stroke)}` : ''
+      return `arc(${f(x)}, ${f(y)}, ${r}, ${f(pts[0])}, ${f(pts[1])}, ${colorArg}, ${opArg}${sk}${tr}${efx})`
+    }
     if (pts) {
       const coords = pts.map(f).join(', ')
       const sw = strokeWidth !== undefined ? `, ${f(strokeWidth)}` : ''
@@ -253,6 +257,24 @@ export function evaluateQuery(
     shapes.push(shape)
   }
 
+  const arc = (cx: number, cy: number, r: number, startAngle: number, endAngle: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    if (shapes.length >= MAX_SHAPES) return
+    const { stroke, transform: xform, effects } = collectTrailing(trailing)
+    const shapeColor = typeof colorArg === 'string' || colorArg === undefined
+      ? { hex: colorArg ?? '#8b5cf6', opacity: Math.max(0, Math.min(1, opacity ?? 0.85)) }
+      : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
+    const shape: Shape = {
+      id: crypto.randomUUID(), type: 'arc',
+      color: shapeColor,
+      geom: { x: cx, y: cy, w: r * 2, h: r * 2 },
+      pts: [startAngle, endAngle],
+    }
+    if (stroke)         shape.stroke    = stroke
+    if (xform)          shape.transform = xform
+    if (effects.length) shape.effects   = effects
+    shapes.push(shape)
+  }
+
   const line = (x1: number, y1: number, x2: number, y2: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
     let sw: number | undefined
     let rest: unknown[] = trailing
@@ -311,34 +333,39 @@ export function evaluateQuery(
   const fract      = (v: number) => v - Math.floor(v)
   const smoothstep = (e0: number, e1: number, x: number) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t) }
 
+  // ── Palette lookup ────────────────────────────────────────────────────────
+  const palette = (name: string, index: number): string => {
+    const p = palettes.find(p => p.name === name)
+    if (!p || p.colors.length === 0) return '#888888'
+    return p.colors[((index % p.colors.length) + p.colors.length) % p.colors.length]
+  }
+
   // ── Execute ───────────────────────────────────────────────────────────────
   try {
-    const paletteNames  = palettes.map(p => paletteVarName(p.name))
-    const paletteArrays = palettes.map(p => [...p.colors])
     new Function(
-      'rect', 'ellipse', 'line', 'curve', 'triangle',
+      'rect', 'ellipse', 'arc', 'line', 'curve', 'triangle',
       'stroke', 'rotate', 'transform',
       'shadow', 'blur', 'bevel', 'noise', 'warp',
       'repeat', 'grid',
       'grad', 'radGrad',
+      'palette',
       'W', 'H',
       'PI', 'TAU', 'E',
       'sin', 'cos', 'tan', 'abs', 'floor', 'ceil', 'round', 'sqrt', 'pow', 'min', 'max', 'random',
       'lerp', 'clamp', 'map', 'fract', 'smoothstep',
-      ...paletteNames,
-      `"use strict";\n${code}`,
+      code,
     )(
-      rect, ellipse, line, curve, triangle,
+      rect, ellipse, arc, line, curve, triangle,
       mkStroke, rotate, transform,
       shadow, blur, bevel, noise, warp,
       repeat, grid,
       grad, radGrad,
+      palette,
       artW, artH,
       Math.PI, Math.PI * 2, Math.E,
       Math.sin, Math.cos, Math.tan, Math.abs, Math.floor, Math.ceil,
       Math.round, Math.sqrt, Math.pow, Math.min, Math.max, Math.random,
       lerp, clamp, map, fract, smoothstep,
-      ...paletteArrays,
     )
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err))

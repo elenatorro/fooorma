@@ -8,6 +8,7 @@
     onExport,
     onSave,
     onLoad,
+    onNew,
   }: {
     artW: number
     artH: number
@@ -15,6 +16,7 @@
     onExport: () => void
     onSave: () => void
     onLoad: (file: File) => void
+    onNew: () => void
   } = $props()
 
   // ── File open ──────────────────────────────────────────────────────────────
@@ -138,6 +140,7 @@
 
   <!-- File controls -->
   <div class="file-controls">
+    <button class="file-btn" onclick={onNew} title="New blank canvas">New</button>
     <button class="file-btn" onclick={openFilePicker} title="Open .forma file">Open</button>
     <button class="file-btn" onclick={onSave} title="Save project as .forma">Save</button>
   </div>

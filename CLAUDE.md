@@ -67,6 +67,16 @@ Each sketch is a `SketchDef` with:
 - Viewport = window width − 260 px (right panel) − margins
 - Zoom: 0.05–20×, pan via Space+drag or scroll
 
+## Shape / Model Consistency Rule
+
+**Any new shape type, shape property, or model change must be reflected across all three surfaces simultaneously — no exceptions:**
+
+1. **Query language** (`src/lib/query/index.ts`) — `evaluateQuery`: add the function and expose it in the `new Function` call; update `shapesToCode` to serialize it back
+2. **Manual UI** (`src/components/RightPanel.svelte`) — shape type button list, property sliders/controls for that shape's unique params, stroke/effects visibility conditions
+3. **Code UI** (`src/components/RightPanel.svelte`) — `apiSnippets` array with correct signature and an example snippet
+
+Missing any surface is a bug. Always check all three before considering a shape task done.
+
 ## Coding Conventions
 
 - **Svelte 5 runes**: use `$state`, `$props`, `$derived`, `$effect`

@@ -11,7 +11,6 @@
     panY,
     activeLayerId,
     activeLayerShapes,
-    onCanvas,
     onCanvas2d,
     onZoomChange,
     onPanChange,
@@ -28,7 +27,6 @@
     panY: number
     activeLayerId: string | null
     activeLayerShapes: Shape[]
-    onCanvas: (canvas: HTMLCanvasElement) => void
     onCanvas2d: (canvas: HTMLCanvasElement) => void
     onZoomChange: (zoom: number, px: number, py: number) => void
     onPanChange: (px: number, py: number) => void
@@ -44,7 +42,6 @@
 
   let viewportEl: HTMLDivElement
   let artboardHost: HTMLDivElement
-  let canvas: HTMLCanvasElement
   let canvas2dEl: HTMLCanvasElement
 
   // Space+drag (pan) state
@@ -84,7 +81,7 @@
     const PAD = 6  // min click area in pixels
     for (let i = activeLayerShapes.length - 1; i >= 0; i--) {
       const s = activeLayerShapes[i]
-      if (s.pts) {
+      if (s.pts && s.type !== 'arc') {
         // Bounding-box hit for line / curve / triangle
         const xs = s.pts.filter((_, j) => j % 2 === 0).map(v => v * artW)
         const ys = s.pts.filter((_, j) => j % 2 === 1).map(v => v * artH)
@@ -138,7 +135,7 @@
       if (hit) {
         // Select + move mode
         onSelectShape(hit.id)
-        if (hit.pts) {
+        if (hit.pts && hit.type !== 'arc') {
           ptsDrag  = { shapeId: hit.id, origPts: [...hit.pts], startNx: nx, startNy: ny }
         } else {
           moveDrag = { shapeId: hit.id,
@@ -217,14 +214,18 @@
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    if (e.code === 'Space' && !e.repeat) { e.preventDefault(); spaceHeld = true }
+    if (e.code === 'Space' && !e.repeat) {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.closest('.cm-editor')) return
+      e.preventDefault()
+      spaceHeld = true
+    }
   }
   function handleKeyUp(e: KeyboardEvent) {
     if (e.code === 'Space') spaceHeld = false
   }
 
   onMount(() => {
-    onCanvas(canvas)
     onCanvas2d(canvas2dEl)
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup',   handleKeyUp)
@@ -270,23 +271,11 @@
     style:width="{artW}px"
     style:height="{artH}px"
   >
-    <!-- GPU canvas (bottom) -->
-    <canvas
-      bind:this={canvas}
-      width={artW}
-      height={artH}
-      style:position="absolute"
-      style:z-index="1"
-      style:width="{artW}px"
-      style:height="{artH}px"
-    ></canvas>
-    <!-- 2D overlay canvas (top) -->
     <canvas
       bind:this={canvas2dEl}
       width={artW}
       height={artH}
       style:position="absolute"
-      style:z-index="2"
       style:width="{artW}px"
       style:height="{artH}px"
     ></canvas>
@@ -314,6 +303,7 @@
     top: 50%;
     left: 50%;
     transform-origin: center center;
+    background: #ffffff;
     box-shadow: 0 8px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06);
     border-radius: 1px;
     will-change: transform;

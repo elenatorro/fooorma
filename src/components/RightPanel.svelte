@@ -1,26 +1,19 @@
 <script lang="ts">
-  import type { SketchDef } from '../lib/sketches/types'
   import type { Layer, Shape, ShapeEffect, ShapeGeom } from '../lib/layers/types'
   import type { Palette } from '../lib/palettes/index'
-  import { paletteVarName } from '../lib/palettes/index'
   import { evaluateQuery } from '../lib/query/index'
   import ColorPicker from './ColorPicker.svelte'
   import GradColorEditor from './GradColorEditor.svelte'
   import CodeEditor from './CodeEditor.svelte'
+  import SliderRow from './SliderRow.svelte'
 
   const {
-    sketches,
-    activeSketch,
-    effectsEnabled,
-    params,
     artW,
     artH,
     layers,
     activeLayerId,
     activeShapeId,
     activeTab,
-    onSketchChange,
-    onParamChange,
     onTabChange,
     onAddLayer,
     onSelectLayer,
@@ -36,24 +29,17 @@
     onDeleteShape,
     onUpdateShape,
     onUpdateGeom,
-    onToggleEffects,
     palettes,
     onAddPalette,
     onUpdatePalette,
     onDeletePalette,
   }: {
-    sketches: SketchDef[]
-    activeSketch: SketchDef
-    effectsEnabled: boolean
-    params: Record<string, number>
     artW: number
     artH: number
     layers: Layer[]
     activeLayerId: string | null
     activeShapeId: string | null
     activeTab: 'layers' | 'effects' | 'palettes'
-    onSketchChange: (s: SketchDef) => void
-    onParamChange: (id: string, value: number) => void
     onTabChange: (t: 'layers' | 'effects' | 'palettes') => void
     onAddLayer: () => void
     onSelectLayer: (id: string) => void
@@ -69,7 +55,6 @@
     onDeleteShape: (layerId: string, shapeId: string) => void
     onUpdateShape: (layerId: string, shapeId: string, update: Partial<Shape>) => void
     onUpdateGeom: (layerId: string, shapeId: string, geom: ShapeGeom) => void
-    onToggleEffects: () => void
     palettes: Palette[]
     onAddPalette: () => void
     onUpdatePalette: (id: string, update: Partial<Palette>) => void
@@ -109,6 +94,7 @@
     { name: 'rect',     sig: 'x, y, w, h, color?, opacity?, stroke?',        code: "rect(0.5, 0.5, 0.3, 0.3, '#8b5cf6', 0.85)" },
     { name: 'ellipse',  sig: 'x, y, w, h, color?, opacity?, stroke?',        code: "ellipse(0.5, 0.5, 0.3, 0.3, '#8b5cf6', 0.85)" },
     { name: 'triangle', sig: 'x1,y1, x2,y2, x3,y3, color?, opacity?, stroke?', code: "triangle(0.5, 0.1, 0.2, 0.9, 0.8, 0.9, '#8b5cf6', 0.85)" },
+    { name: 'arc',      sig: 'cx, cy, r, startDeg, endDeg, color?, opacity?, stroke?', code: "arc(0.5, 0.5, 0.2, 0, 270, '#8b5cf6', 0.85)" },
     { name: 'line',     sig: 'x1, y1, x2, y2, color?, opacity?, width?',     code: "line(0.1, 0.5, 0.9, 0.5, '#8b5cf6', 0.85)" },
     { name: 'curve',    sig: 'x1, y1, cx, cy, x2, y2, color?, opacity?, width?', code: "curve(0.1, 0.5, 0.5, 0.15, 0.9, 0.5, '#8b5cf6', 0.85)" },
     { name: 'stroke',    sig: "hex, opacity?, width?, align?, join?",           code: "stroke('#000000', 1, 0.005)" },
@@ -152,7 +138,7 @@
   let tplCount   = $state(8)
   let tplCols    = $state(4)
   let tplRows    = $state(4)
-  let tplShape   = $state<'rect' | 'ellipse' | 'line' | 'curve' | 'triangle'>('rect')
+  let tplShape   = $state<'rect' | 'ellipse' | 'arc' | 'line' | 'curve' | 'triangle'>('rect')
   let tplColor   = $state('#8b5cf6')
   let tplOpacity = $state(0.85)
 
@@ -165,6 +151,7 @@
     const nr = tplRows
 
     if (tpl === 'single') {
+      if (s === 'arc')      return `arc(0.5, 0.5, 0.2, 0, 270, ${color}, ${op})`
       if (s === 'line')     return `line(0.1, 0.5, 0.9, 0.5, ${color}, ${op})`
       if (s === 'curve')    return `curve(0.1, 0.5, 0.5, 0.1, 0.9, 0.5, ${color}, ${op})`
       if (s === 'triangle') return `triangle(0.5, 0.1, 0.2, 0.9, 0.8, 0.9, ${color}, ${op})`
@@ -174,6 +161,8 @@
     if (tpl === 'row') {
       if (s === 'rect' || s === 'ellipse')
         return `repeat(${n}, (i, t) => {\n  ${s}((i + 0.5) / ${n}, 0.5, 1/${n} * 0.85, 0.4, ${color}, ${op})\n})`
+      if (s === 'arc')
+        return `repeat(${n}, (i, t) => {\n  arc((i + 0.5) / ${n}, 0.5, 1/${n} * 0.4, 0, 270, ${color}, ${op})\n})`
       if (s === 'line')
         return `repeat(${n}, (i, t) => {\n  line(0.1, (i + 0.5) / ${n}, 0.9, (i + 0.5) / ${n}, ${color}, ${op})\n})`
       if (s === 'curve')
@@ -184,6 +173,8 @@
     if (tpl === 'grid') {
       if (s === 'rect' || s === 'ellipse')
         return `grid(${nc}, ${nr}, (c, r) => {\n  ${s}((c + 0.5) / ${nc}, (r + 0.5) / ${nr}, 1/${nc} * 0.85, 1/${nr} * 0.85, ${color}, ${op})\n})`
+      if (s === 'arc')
+        return `grid(${nc}, ${nr}, (c, r) => {\n  arc((c + 0.5) / ${nc}, (r + 0.5) / ${nr}, 1/${nc} * 0.4, 0, 270, ${color}, ${op})\n})`
       if (s === 'line')
         return `grid(${nc}, ${nr}, (c, r) => {\n  const x = (c + 0.5) / ${nc}\n  const y = (r + 0.5) / ${nr}\n  const d = 1/${nc} * 0.4\n  line(x - d, y, x + d, y, ${color}, ${op})\n})`
       if (s === 'curve')
@@ -194,6 +185,8 @@
     // spiral
     if (s === 'rect' || s === 'ellipse')
       return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  ${s}(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.03 + t * 0.05, 0.03 + t * 0.05, ${color}, ${op})\n})`
+    if (s === 'arc')
+      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  arc(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.03 + t * 0.05, 0, 270, ${color}, ${op})\n})`
     if (s === 'line')
       return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const len = 0.015 + t * 0.025\n  const nx = cos(angle + PI / 2) * len\n  const ny = sin(angle + PI / 2) * len\n  line(cx - nx, cy - ny, cx + nx, cy + ny, ${color}, ${op})\n})`
     if (s === 'curve')
@@ -385,19 +378,13 @@
 
         <!-- Count (row / spiral) -->
         {#if tpl === 'row' || tpl === 'spiral'}
-          <div class="param-row">
-            <label class="param-label" for="tpl-count">Count</label>
-            <div class="param-control">
-              <input id="tpl-count" type="range" min="1" max="100" step="1" bind:value={tplCount} />
-              <span class="param-val">{tplCount}</span>
-            </div>
-          </div>
+          <SliderRow id="tpl-count" label="Count" min={1} max={100} step={1} value={tplCount} onchange={(v) => tplCount = v} />
         {/if}
 
         <!-- Cols × Rows (grid) -->
         {#if tpl === 'grid'}
-          <div class="param-row">
-            <label class="param-label" for="tpl-cols">Cols × Rows</label>
+          <div class="tpl-grid-dims">
+            <label class="tpl-dim-label">Cols × Rows</label>
             <div class="tpl-grid-row">
               <input id="tpl-cols" class="num-input" type="number" min="1" max="50" bind:value={tplCols} />
               <span class="tpl-x">×</span>
@@ -409,7 +396,7 @@
         <!-- Shape type -->
         {#if true}
           <div class="shape-list" style:margin-top="8px" style:margin-bottom="8px">
-            {#each ([['rect','▭','Rect'],['ellipse','◯','Ellipse'],['line','╱','Line'],['curve','∿','Curve'],['triangle','△','Triangle']] as const) as [val, icon, label]}
+            {#each ([['rect','▭','Rect'],['ellipse','◯','Ellipse'],['arc','◜','Arc'],['line','╱','Line'],['curve','∿','Curve'],['triangle','△','Triangle']] as const) as [val, icon, label]}
               <button class="shape-list-item" class:active={tplShape === val} onclick={() => tplShape = val as typeof tplShape}>
                 <span class="shape-list-icon">{icon}</span>{label}
               </button>
@@ -418,19 +405,26 @@
         {/if}
 
         <!-- Color + opacity -->
-        <div class="color-control" style:margin-bottom="10px">
-          <ColorPicker
-            hex={tplColor}
-            opacity={tplOpacity}
-            onChange={(h, op) => { tplColor = h; tplOpacity = op }}
-          />
-          <span class="prop-label" style:font-family="monospace" style:flex="1">{tplColor}</span>
-          <span class="param-val">{tplOpacity.toFixed(2)}</span>
+        <div class="prop-row">
+          <label class="prop-label">Color</label>
+          <div class="color-control">
+            <ColorPicker
+              hex={tplColor}
+              opacity={tplOpacity}
+              onChange={(h, op) => { tplColor = h; tplOpacity = op }}
+            />
+            <span class="tpl-hex">{tplColor}</span>
+          </div>
         </div>
+        <SliderRow id="tpl-opacity" label="Opacity" min={0} max={1} step={0.01} value={tplOpacity} onchange={(v) => tplOpacity = v} style="margin-bottom:10px" />
 
         <button
           class="insert-btn"
-          onclick={() => activeLayer && onSetQuery(activeLayer.id, buildTemplate())}
+          onclick={() => {
+            if (!activeLayer) return
+            const existing = activeLayer.query.trimEnd()
+            onSetQuery(activeLayer.id, existing ? existing + '\n' + buildTemplate() : buildTemplate())
+          }}
         >→ Insert code</button>
       </section>
     {/if}
@@ -464,7 +458,7 @@
           bind:this={editorRef}
           value={activeLayer.query}
           minHeight={codeExpanded ? '400px' : '220px'}
-          extraCompletions={palettes.map(p => paletteVarName(p.name))}
+          extraCompletions={palettes.map(p => `palette('${p.name}', 0)`)}
           onChange={(v) => { onSetQuery(activeLayer.id, v); detectColorAtCursor() }}
           onCursorChange={detectColorAtCursor}
         />
@@ -511,14 +505,13 @@
                   <button class="api-const-btn" onclick={() => insertSnippet(c)} title={c}>{c}</button>
                 {/each}
                 {#each palettes as p}
-                  {@const vn = paletteVarName(p.name)}
-                  <button class="api-const-btn palette-var-btn" onclick={() => insertSnippet(vn)} title="{p.name} — {p.colors.length} colors">
+                  <button class="api-const-btn palette-var-btn" onclick={() => insertSnippet(`palette('${p.name}', 0)`)} title="{p.name} — {p.colors.length} colors">
                     <span class="palette-var-dots">
                       {#each p.colors.slice(0, 5) as c}
                         <span class="palette-dot" style:background={c}></span>
                       {/each}
                     </span>
-                    {vn}
+                    {p.name}
                   </button>
                 {/each}
               </div>
@@ -542,9 +535,9 @@
               class:selected={shape.id === activeShapeId}
               onclick={() => onSelectShape(shape.id)}
             >
-              <span class="shape-type-badge">{ ({rect:'▭',ellipse:'◯',line:'╱',curve:'∿',triangle:'△'} as Record<string,string>)[shape.type] }</span>
+              <span class="shape-type-badge">{ ({rect:'▭',ellipse:'◯',arc:'◜',line:'╱',curve:'∿',triangle:'△'} as Record<string,string>)[shape.type] }</span>
               <span class="shape-auto-name">
-                { ({rect:'Rect',ellipse:'Ellipse',line:'Line',curve:'Curve',triangle:'Triangle'} as Record<string,string>)[shape.type] } {i + 1}
+                { ({rect:'Rect',ellipse:'Ellipse',arc:'Arc',line:'Line',curve:'Curve',triangle:'Triangle'} as Record<string,string>)[shape.type] } {i + 1}
               </span>
               <button
                 class="icon-btn delete-btn"
@@ -568,6 +561,7 @@
           {#each ([
             ['rect',     '▭', 'Rect',     undefined],
             ['ellipse',  '◯', 'Ellipse',  undefined],
+            ['arc',      '◜', 'Arc',      [0, 270]],
             ['line',     '╱', 'Line',     [0.2,0.5,0.8,0.5]],
             ['curve',    '∿', 'Curve',    [0.2,0.5,0.5,0.1,0.8,0.5]],
             ['triangle', '△', 'Triangle', [0.5,0.1,0.2,0.9,0.8,0.9]],
@@ -590,7 +584,7 @@
           />
         </div>
 
-        <!-- Stroke (rect / ellipse / triangle) -->
+        <!-- Stroke (rect / ellipse / arc / triangle) -->
         {#if activeShape.type !== 'line' && activeShape.type !== 'curve'}
           <div class="prop-row" style:margin-top="10px">
             <label class="prop-label">Stroke</label>
@@ -614,20 +608,10 @@
               })}
             />
             {@const sk = activeShape.stroke}
-            <div class="param-row">
-              <label class="param-label" for="stroke-width">Width</label>
-              <div class="param-control">
-                <input
-                  id="stroke-width"
-                  type="range" min="0.001" max="0.05" step="0.001"
-                  value={sk.width}
-                  oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
-                    stroke: { ...sk, width: parseFloat((e.target as HTMLInputElement).value) }
-                  })}
-                />
-                <span class="param-val">{sk.width.toFixed(3)}</span>
-              </div>
-            </div>
+            <SliderRow id="stroke-width" label="Width" min={0.001} max={0.05} step={0.001}
+              value={sk.width}
+              onchange={(v) => onUpdateShape(activeLayer.id, activeShape.id, { stroke: { ...sk, width: v } })}
+            />
             <div class="prop-row">
               <label class="prop-label">Align</label>
               <div class="mini-toggle">
@@ -652,44 +636,44 @@
         {/if}
 
         <!-- Rotation slider (all shape types) -->
-        <div class="param-row" style:margin-top="10px">
-          <label class="prop-label" for="shape-rotate">Rotate</label>
-          <div class="param-control">
-            <input id="shape-rotate" type="range" min="-180" max="180" step="1"
-              value={activeShape.transform?.rotate ?? 0}
-              oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
-                transform: { ...activeShape.transform, rotate: parseFloat((e.target as HTMLInputElement).value) }
-              })}
-            />
-            <span class="param-val">{activeShape.transform?.rotate ?? 0}°</span>
-          </div>
-        </div>
+        <SliderRow id="shape-rotate" label="Rotate" min={-180} max={180} step={1}
+          value={activeShape.transform?.rotate ?? 0}
+          onchange={(v) => onUpdateShape(activeLayer.id, activeShape.id, { transform: { ...activeShape.transform, rotate: v } })}
+          style="margin-top: 10px"
+        />
 
-        <!-- Geometry sliders (rect / ellipse) -->
-        {#if activeShape.type === 'rect' || activeShape.type === 'ellipse'}
+        <!-- Geometry sliders (rect / ellipse / arc center) -->
+        {#if activeShape.type === 'rect' || activeShape.type === 'ellipse' || activeShape.type === 'arc'}
           <h2 class="section-title" style:margin-top="12px">Position & Size</h2>
-          {#each geomKeys as { label, key }}
-            <div class="param-row">
-              <label class="param-label" for={`geom-${key}`}>{label}</label>
-              <div class="param-control">
-                <input
-                  id={`geom-${key}`}
-                  type="range"
-                  min="0" max="1" step="0.001"
-                  value={activeShape.geom[key]}
-                  oninput={(e) => onUpdateGeom(activeLayer.id, activeShape.id, {
-                    ...activeShape.geom,
-                    [key]: parseFloat((e.target as HTMLInputElement).value)
-                  })}
-                />
-                <span class="param-val">{activeShape.geom[key].toFixed(3)}</span>
-              </div>
-            </div>
+          {#each geomKeys.filter(k => activeShape.type !== 'arc' || k.key === 'x' || k.key === 'y') as { label, key }}
+            <SliderRow id={`geom-${key}`} {label} min={0} max={1} step={0.001}
+              value={activeShape.geom[key]}
+              onchange={(v) => onUpdateGeom(activeLayer.id, activeShape.id, { ...activeShape.geom, [key]: v })}
+            />
+          {/each}
+        {/if}
+
+        <!-- Arc sliders -->
+        {#if activeShape.type === 'arc'}
+          <h2 class="section-title" style:margin-top="12px">Arc</h2>
+          <SliderRow id="arc-r" label="Radius" min={0.01} max={1} step={0.001}
+            value={activeShape.geom.w / 2}
+            onchange={(v) => onUpdateGeom(activeLayer.id, activeShape.id, { ...activeShape.geom, w: v * 2, h: v * 2 })}
+          />
+          {#each ['Start', 'End'] as lbl, i}
+            <SliderRow id={`arc-${i}`} label={lbl} min={-360} max={360} step={1}
+              value={activeShape.pts?.[i] ?? (i === 0 ? 0 : 270)}
+              onchange={(v) => {
+                const pts = [...(activeShape.pts ?? [0, 270])]
+                pts[i] = v
+                onUpdateShape(activeLayer.id, activeShape.id, { pts })
+              }}
+            />
           {/each}
         {/if}
 
         <!-- Pts sliders (line / curve / triangle) -->
-        {#if activeShape.pts}
+        {#if activeShape.pts && activeShape.type !== 'arc'}
           {@const ptsLabels = activeShape.type === 'curve'
             ? ['X1','Y1','CX','CY','X2','Y2']
             : activeShape.type === 'triangle'
@@ -697,40 +681,20 @@
               : ['X1','Y1','X2','Y2']}
           <h2 class="section-title" style:margin-top="12px">Points</h2>
           {#each ptsLabels as lbl, i}
-            <div class="param-row">
-              <label class="param-label" for={`pts-${i}`}>{lbl}</label>
-              <div class="param-control">
-                <input
-                  id={`pts-${i}`}
-                  type="range"
-                  min="0" max="1" step="0.001"
-                  value={activeShape.pts[i] ?? 0}
-                  oninput={(e) => {
-                    const pts = [...(activeShape.pts!)]
-                    pts[i] = parseFloat((e.target as HTMLInputElement).value)
-                    onUpdateShape(activeLayer.id, activeShape.id, { pts })
-                  }}
-                />
-                <span class="param-val">{(activeShape.pts[i] ?? 0).toFixed(3)}</span>
-              </div>
-            </div>
+            <SliderRow id={`pts-${i}`} label={lbl} min={0} max={1} step={0.001}
+              value={activeShape.pts[i] ?? 0}
+              onchange={(v) => {
+                const pts = [...(activeShape.pts!)]
+                pts[i] = v
+                onUpdateShape(activeLayer.id, activeShape.id, { pts })
+              }}
+            />
           {/each}
           {#if activeShape.type === 'line' || activeShape.type === 'curve'}
-            <div class="param-row">
-              <label class="param-label" for="stroke-w">Stroke</label>
-              <div class="param-control">
-                <input
-                  id="stroke-w"
-                  type="range"
-                  min="0.001" max="0.05" step="0.001"
-                  value={activeShape.strokeWidth ?? 0.004}
-                  oninput={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
-                    strokeWidth: parseFloat((e.target as HTMLInputElement).value)
-                  })}
-                />
-                <span class="param-val">{(activeShape.strokeWidth ?? 0.004).toFixed(3)}</span>
-              </div>
-            </div>
+            <SliderRow id="stroke-w" label="Stroke" min={0.001} max={0.05} step={0.001}
+              value={activeShape.strokeWidth ?? 0.004}
+              onchange={(v) => onUpdateShape(activeLayer.id, activeShape.id, { strokeWidth: v })}
+            />
           {/if}
         {/if}
       </section>
@@ -747,11 +711,11 @@
           <div class="palette-row">
             <div class="palette-row-header">
               <span class="palette-row-name">{palette.name}</span>
-              <span class="palette-row-var">{paletteVarName(palette.name)}</span>
+              <span class="palette-row-var">palette('{palette.name}', i)</span>
               <button
                 class="code-tool-btn"
                 title="Copy variable name"
-                onclick={() => navigator.clipboard.writeText(paletteVarName(palette.name))}
+                onclick={() => navigator.clipboard.writeText(`palette('${palette.name}', 0)`)}
               >copy</button>
             </div>
             <div class="palette-swatches">
@@ -795,11 +759,11 @@
                   ondblclick={() => { editingPaletteId = palette.id; editingPaletteName = palette.name }}
                 >{palette.name}</span>
               {/if}
-              <span class="palette-row-var">{paletteVarName(palette.name)}</span>
+              <span class="palette-row-var">palette('{palette.name}', i)</span>
               <button
                 class="code-tool-btn"
                 title="Copy variable name"
-                onclick={() => navigator.clipboard.writeText(paletteVarName(palette.name))}
+                onclick={() => navigator.clipboard.writeText(`palette('${palette.name}', 0)`)}
               >copy</button>
               <button
                 class="icon-btn delete-btn"
@@ -877,19 +841,14 @@
                 onChange={(h) => setFx('shadow', { color: h })} />
             </div>
             {#each [
-              { id: 'sh-op',  label: 'Opacity', key: 'opacity', min: 0,   max: 1,  step: 0.01, val: shadowFx.opacity ?? 0.5,  fmt: (v: number) => v.toFixed(2) },
-              { id: 'sh-bl',  label: 'Blur',    key: 'blur',    min: 0,   max: 40, step: 1,    val: shadowFx.blur    ?? 10,   fmt: (v: number) => String(v|0) },
-              { id: 'sh-ox',  label: 'X',       key: 'offsetX', min: -40, max: 40, step: 1,    val: shadowFx.offsetX ?? 0,    fmt: (v: number) => String(v|0) },
-              { id: 'sh-oy',  label: 'Y',       key: 'offsetY', min: -40, max: 40, step: 1,    val: shadowFx.offsetY ?? 4,    fmt: (v: number) => String(v|0) },
+              { id: 'sh-op', label: 'Opacity', key: 'opacity', min: 0,   max: 1,  step: 0.01, val: shadowFx.opacity ?? 0.5 },
+              { id: 'sh-bl', label: 'Blur',    key: 'blur',    min: 0,   max: 40, step: 1,    val: shadowFx.blur    ?? 10  },
+              { id: 'sh-ox', label: 'X',       key: 'offsetX', min: -40, max: 40, step: 1,    val: shadowFx.offsetX ?? 0   },
+              { id: 'sh-oy', label: 'Y',       key: 'offsetY', min: -40, max: 40, step: 1,    val: shadowFx.offsetY ?? 4   },
             ] as p}
-              <div class="param-row">
-                <label class="param-label" for={p.id}>{p.label}</label>
-                <div class="param-control">
-                  <input id={p.id} type="range" min={p.min} max={p.max} step={p.step} value={p.val}
-                    oninput={(e) => setFx('shadow', { [p.key]: parseFloat((e.target as HTMLInputElement).value) })} />
-                  <span class="param-val">{p.fmt(p.val)}</span>
-                </div>
-              </div>
+              <SliderRow id={p.id} label={p.label} min={p.min} max={p.max} step={p.step} value={p.val}
+                onchange={(v) => setFx('shadow', { [p.key]: v })}
+              />
             {/each}
           </div>
         {/if}
@@ -902,14 +861,8 @@
         </div>
         {#if blurFx}
           <div class="fx-params">
-            <div class="param-row">
-              <label class="param-label" for="bl-am">Amount</label>
-              <div class="param-control">
-                <input id="bl-am" type="range" min="0" max="20" step="0.5" value={blurFx.blur ?? 4}
-                  oninput={(e) => setFx('blur', { blur: parseFloat((e.target as HTMLInputElement).value) })} />
-                <span class="param-val">{(blurFx.blur ?? 4).toFixed(1)}</span>
-              </div>
-            </div>
+            <SliderRow id="bl-am" label="Amount" min={0} max={20} step={0.5}
+              value={blurFx.blur ?? 4} onchange={(v) => setFx('blur', { blur: v })} />
           </div>
         {/if}
 
@@ -921,14 +874,8 @@
         </div>
         {#if bevelFx}
           <div class="fx-params">
-            <div class="param-row">
-              <label class="param-label" for="bv-op">Intensity</label>
-              <div class="param-control">
-                <input id="bv-op" type="range" min="0" max="1" step="0.01" value={bevelFx.opacity ?? 0.6}
-                  oninput={(e) => setFx('bevel', { opacity: parseFloat((e.target as HTMLInputElement).value) })} />
-                <span class="param-val">{(bevelFx.opacity ?? 0.6).toFixed(2)}</span>
-              </div>
-            </div>
+            <SliderRow id="bv-op" label="Intensity" min={0} max={1} step={0.01}
+              value={bevelFx.opacity ?? 0.6} onchange={(v) => setFx('bevel', { opacity: v })} />
           </div>
         {/if}
 
@@ -940,14 +887,8 @@
         </div>
         {#if noiseFx}
           <div class="fx-params">
-            <div class="param-row">
-              <label class="param-label" for="ns-am">Amount</label>
-              <div class="param-control">
-                <input id="ns-am" type="range" min="0" max="1" step="0.01" value={noiseFx.amount ?? 0.3}
-                  oninput={(e) => setFx('noise', { amount: parseFloat((e.target as HTMLInputElement).value) })} />
-                <span class="param-val">{(noiseFx.amount ?? 0.3).toFixed(2)}</span>
-              </div>
-            </div>
+            <SliderRow id="ns-am" label="Amount" min={0} max={1} step={0.01}
+              value={noiseFx.amount ?? 0.3} onchange={(v) => setFx('noise', { amount: v })} />
           </div>
         {/if}
 
@@ -960,17 +901,12 @@
         {#if warpFx}
           <div class="fx-params">
             {#each [
-              { id: 'wp-am', label: 'Strength', key: 'amount', min: 0, max: 40,   step: 0.5,  val: warpFx.amount ?? 8,    fmt: (v: number) => v.toFixed(1) },
-              { id: 'wp-fr', label: 'Frequency', key: 'freq',  min: 0.005, max: 0.2, step: 0.005, val: warpFx.freq ?? 0.05, fmt: (v: number) => v.toFixed(3) },
+              { id: 'wp-am', label: 'Strength',  key: 'amount', min: 0,     max: 40,  step: 0.5,   val: warpFx.amount ?? 8    },
+              { id: 'wp-fr', label: 'Frequency', key: 'freq',   min: 0.005, max: 0.2, step: 0.005, val: warpFx.freq   ?? 0.05 },
             ] as p}
-              <div class="param-row">
-                <label class="param-label" for={p.id}>{p.label}</label>
-                <div class="param-control">
-                  <input id={p.id} type="range" min={p.min} max={p.max} step={p.step} value={p.val}
-                    oninput={(e) => setFx('warp', { [p.key]: parseFloat((e.target as HTMLInputElement).value) })} />
-                  <span class="param-val">{p.fmt(p.val)}</span>
-                </div>
-              </div>
+              <SliderRow id={p.id} label={p.label} min={p.min} max={p.max} step={p.step} value={p.val}
+                onchange={(v) => setFx('warp', { [p.key]: v })}
+              />
             {/each}
           </div>
         {/if}
@@ -979,45 +915,6 @@
         <p class="fx-hint">Select a shape in the Layers tab to apply shaders.</p>
       {/if}
     </section>
-
-    <!-- GPU layer -->
-    <section class="section">
-      <div class="effects-header">
-        <h2 class="section-title" style:margin-bottom="0">GPU Layer</h2>
-        <button class="effects-toggle" class:on={effectsEnabled} onclick={onToggleEffects}>
-          {effectsEnabled ? 'On' : 'Off'}
-        </button>
-      </div>
-    </section>
-
-    {#if effectsEnabled}
-      <section class="section">
-        <div class="grid">
-          {#each sketches as s}
-            <button class="preset-btn" class:active={s.id === activeSketch.id}
-              onclick={() => onSketchChange(s)} title={s.name}>
-              <span class="preset-icon">{s.name[0]}</span>
-              <span class="preset-name">{s.name}</span>
-            </button>
-          {/each}
-        </div>
-      </section>
-      {#if activeSketch.params.length > 0}
-        <section class="section">
-          {#each activeSketch.params as p}
-            {@const val = params[p.id] ?? p.default}
-            <div class="param-row">
-              <label for={`param-${p.id}`} class="param-label">{p.label}</label>
-              <div class="param-control">
-                <input id={`param-${p.id}`} type="range" min={p.min} max={p.max} step={p.step ?? 0.01} value={val}
-                  oninput={(e) => onParamChange(p.id, parseFloat((e.target as HTMLInputElement).value))} />
-                <span class="param-val">{val.toFixed(p.step && p.step >= 1 ? 0 : 2)}</span>
-              </div>
-            </div>
-          {/each}
-        </section>
-      {/if}
-    {/if}
 
   {/if}
 </aside>
@@ -1247,6 +1144,17 @@
   .tpl-btn:hover { border-color: #444; color: #bbb; }
   .tpl-btn.active { border-color: #8b5cf6; background: #1a1428; color: #c4b0f8; }
 
+  .tpl-grid-dims {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .tpl-dim-label {
+    font-size: 11px;
+    color: #888890;
+  }
+
   .tpl-grid-row {
     display: flex;
     align-items: center;
@@ -1254,15 +1162,16 @@
   }
 
   .num-input {
-    width: 52px;
+    width: 48px;
     background: #111114;
     border: 1px solid #2b2b30;
-    border-radius: 4px;
-    color: #c8c8d0;
-    font-size: 12px;
-    padding: 3px 6px;
+    border-radius: 3px;
+    color: #c4c4cc;
+    font-family: monospace;
+    font-size: 11px;
+    padding: 1px 4px;
     outline: none;
-    text-align: center;
+    text-align: right;
     -moz-appearance: textfield;
     appearance: textfield;
   }
@@ -1271,8 +1180,15 @@
   .num-input::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; }
 
   .tpl-x {
-    font-size: 12px;
+    font-size: 11px;
     color: #555560;
+  }
+
+  .tpl-hex {
+    font-family: monospace;
+    font-size: 11px;
+    color: #888890;
+    flex: 1;
   }
 
   .insert-btn {
@@ -1464,27 +1380,6 @@
   }
   .api-const-btn:hover { border-color: #6d28d9; color: #c4b0f8; background: #17141f; }
 
-  /* ── Effects header ── */
-  .effects-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .effects-toggle {
-    padding: 3px 10px;
-    border-radius: 10px;
-    border: 1px solid #333340;
-    background: #111114;
-    color: #666672;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: border-color .15s, color .15s, background .15s;
-  }
-  .effects-toggle:hover { border-color: #555; color: #aaa; }
-  .effects-toggle.on { border-color: #8b5cf6; background: #1a1428; color: #c4b0f8; }
-
   /* ── Shader effects ── */
   .fx-row {
     display: flex;
@@ -1590,89 +1485,6 @@
     flex-shrink: 0;
   }
 
-  /* ── Preset grid ── */
-  .grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-
-  .preset-btn {
-    background: #111114;
-    border: 1px solid #2b2b30;
-    border-radius: 6px;
-    cursor: pointer;
-    padding: 12px 8px 8px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    transition: border-color .15s, background .15s;
-  }
-  .preset-btn:hover { border-color: #444; background: #1a1a20; }
-  .preset-btn.active { border-color: #8b5cf6; background: #1a1428; }
-
-  .preset-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 4px;
-    background: linear-gradient(135deg, #1a0830, #2a1040);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    font-weight: 700;
-    color: #8b5cf6;
-    font-family: monospace;
-  }
-  .preset-btn.active .preset-icon { background: linear-gradient(135deg, #2a0860, #4a1870); }
-
-  .preset-name {
-    font-size: 11px;
-    color: #888890;
-  }
-  .preset-btn.active .preset-name { color: #c4b0f8; }
-
-  /* ── Params ── */
-  .params {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .param-row {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .param-label {
-    font-size: 11px;
-    color: #888890;
-  }
-
-  .param-control {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  input[type="range"] {
-    flex: 1;
-    height: 3px;
-    accent-color: #8b5cf6;
-    cursor: pointer;
-    background: transparent;
-  }
-
-  .param-val {
-    font-family: monospace;
-    font-size: 11px;
-    color: #666672;
-    width: 34px;
-    text-align: right;
-    flex-shrink: 0;
-  }
 
   /* ── Palette tab ── */
   .palette-list {

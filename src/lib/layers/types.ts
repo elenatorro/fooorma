@@ -1,4 +1,4 @@
-export type ShapeType = 'rect' | 'ellipse' | 'line' | 'curve' | 'triangle'
+export type ShapeType = 'rect' | 'ellipse' | 'line' | 'curve' | 'triangle' | 'arc'
 
 export interface ColorStop    { hex: string; opacity: number; pos: number }
 export interface LinearGradient { type: 'linear'; angle: number; stops: ColorStop[] }

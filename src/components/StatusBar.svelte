@@ -1,13 +1,11 @@
 <script lang="ts">
   const {
     zoom,
-    rendererType,
     onZoom,
     onFit,
     onReset,
   }: {
     zoom: number
-    rendererType: string
     onZoom: (delta: number) => void
     onFit: () => void
     onReset: () => void
@@ -24,9 +22,6 @@
     <button class="text-btn" onclick={onFit} title="Fit to view (0)">Fit</button>
     <button class="text-btn" onclick={onReset} title="100% (1)">1:1</button>
   </div>
-  {#if rendererType}
-    <span class="badge">{rendererType}</span>
-  {/if}
 </footer>
 
 <style>
@@ -81,10 +76,4 @@
     text-align: center;
   }
 
-  .badge {
-    margin-left: auto;
-    font-family: monospace;
-    font-size: 10px;
-    color: #444450;
-  }
 </style>

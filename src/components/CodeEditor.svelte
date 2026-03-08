@@ -9,7 +9,7 @@
     snippetCompletion,
   } from '@codemirror/autocomplete'
   import { defaultKeymap, indentWithTab, history, historyKeymap } from '@codemirror/commands'
-  import { HighlightStyle, syntaxHighlighting, indentOnInput } from '@codemirror/language'
+  import { HighlightStyle, syntaxHighlighting, indentOnInput, indentUnit } from '@codemirror/language'
   import { tags } from '@lezer/highlight'
 
   const {
@@ -108,6 +108,8 @@
       { label: 'ellipse', detail: 'x, y, w, h, color?, opacity?, stroke?', type: 'function', boost: 10 }),
     snippetCompletion("triangle(${x1}, ${y1}, ${x2}, ${y2}, ${x3}, ${y3})",
       { label: 'triangle', detail: 'x1,y1, x2,y2, x3,y3, color?, opacity?, stroke?', type: 'function', boost: 10 }),
+    snippetCompletion("arc(${cx}, ${cy}, ${r}, ${startDeg}, ${endDeg})",
+      { label: 'arc', detail: 'cx, cy, r, startDeg, endDeg, color?, opacity?, stroke?', type: 'function', boost: 10 }),
     snippetCompletion("line(${x1}, ${y1}, ${x2}, ${y2})",
       { label: 'line', detail: 'x1, y1, x2, y2, color?, opacity?, width?', type: 'function', boost: 10 }),
     snippetCompletion("curve(${x1}, ${y1}, ${cx}, ${cy}, ${x2}, ${y2})",
@@ -189,6 +191,7 @@
           javascript(),
           syntaxHighlighting(formaHighlight),
           autocompletion({ override: [completionSource], activateOnTyping: true }),
+          indentUnit.of('  '),
           keymap.of([indentWithTab, ...historyKeymap, ...completionKeymap, ...defaultKeymap]),
           indentOnInput(),
           cmPlaceholder('// rect(x, y, w, h)  ellipse(x, y, w, h)  line(x1,y1,x2,y2)\n// repeat(n, (i, t) => { })  ·  grid(cols, rows, (c, r) => { })'),
@@ -232,11 +235,39 @@
     if (!view) return null
     const pos = view.state.selection.main.head
     const doc = view.state.doc.toString()
-    const re = /#[0-9a-fA-F]{6}/gi
+
+    // Pass 1: hex directly at cursor (include surrounding quote chars in the hit area)
+    const hexRe = /#[0-9a-fA-F]{6}/gi
     let m: RegExpExecArray | null
-    while ((m = re.exec(doc)) !== null) {
-      if (pos >= m.index && pos <= m.index + 7) return { hex: m[0], from: m.index, to: m.index + 7 }
+    while ((m = hexRe.exec(doc)) !== null) {
+      const lo = m.index - (doc[m.index - 1] === "'" || doc[m.index - 1] === '"' ? 1 : 0)
+      const hi = m.index + 7 + (doc[m.index + 7] === "'" || doc[m.index + 7] === '"' ? 1 : 0)
+      if (pos >= lo && pos <= hi) return { hex: m[0], from: m.index, to: m.index + 7 }
     }
+
+    // Pass 2: cursor inside a color-accepting function call → return its first hex arg
+    const fnRe = /\b(stroke|grad|radGrad|shadow)\s*\(/g
+    let fn: RegExpExecArray | null
+    while ((fn = fnRe.exec(doc)) !== null) {
+      const callStart = fn.index
+      const parenOpen = fn.index + fn[0].length - 1
+      let depth = 1, i = parenOpen + 1
+      while (i < doc.length && depth > 0) {
+        if (doc[i] === '(') depth++
+        else if (doc[i] === ')') depth--
+        i++
+      }
+      const callEnd = i - 1  // index of closing ')'
+      if (pos >= callStart && pos <= callEnd) {
+        const seg = doc.slice(parenOpen + 1, callEnd)
+        const h = /#[0-9a-fA-F]{6}/i.exec(seg)
+        if (h) {
+          const from = parenOpen + 1 + h.index
+          return { hex: h[0], from, to: from + 7 }
+        }
+      }
+    }
+
     return null
   }
 
