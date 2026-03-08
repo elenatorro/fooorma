@@ -23,10 +23,9 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) return null
-      const parsed = parseProject(raw)
-      const activeIdx = parseInt(localStorage.getItem(STORAGE_KEY + '_idx') ?? '')
-      const idx = isNaN(activeIdx) ? parsed.layers.length - 1 : Math.min(activeIdx, parsed.layers.length - 1)
-      return { ...parsed, customPalettes: parsed.customPalettes ?? [], activeIdx: Math.max(0, idx) }
+      const data = JSON.parse(raw) as { layers: Layer[]; artW: number; artH: number; customPalettes: Palette[]; activeIdx: number }
+      if (!Array.isArray(data.layers)) return null
+      return data
     } catch {
       return null
     }
@@ -118,14 +117,11 @@
   // ── Autosave effect ────────────────────────────────────────────────────────
   let _saveTimer: ReturnType<typeof setTimeout> | undefined
   $effect(() => {
-    const data = serializeProject({ layers, artW, artH, customPalettes })
     const idx  = layers.findIndex(l => l.id === activeLayerId)
+    const data = JSON.stringify({ layers, artW, artH, customPalettes, activeIdx: idx < 0 ? layers.length - 1 : idx })
     clearTimeout(_saveTimer)
     _saveTimer = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, data)
-        localStorage.setItem(STORAGE_KEY + '_idx', String(idx < 0 ? layers.length - 1 : idx))
-      } catch { /* storage full or unavailable */ }
+      try { localStorage.setItem(STORAGE_KEY, data) } catch { /* storage full or unavailable */ }
     }, 500)
   })
   const allPalettes  = $derived([...BUILTIN_PALETTES, ...customPalettes])
@@ -435,15 +431,19 @@
     offscreen.height = artH
     const octx = offscreen.getContext('2d')!
 
-    // Draw GPU layer only when effects are enabled
+    // GPU background
     if (effectsEnabled && renderer) {
       const gpuBlob = await renderer.exportPNG()
-      const gpuImg  = await createImageBitmap(gpuBlob)
-      octx.drawImage(gpuImg, 0, 0)
+      octx.drawImage(await createImageBitmap(gpuBlob), 0, 0, artW, artH)
     }
 
-    // Draw 2D overlay cleanly (no selection outline)
-    renderLayers2D(octx, resolvedLayers, artW, artH)
+    // 2D overlay — read directly from the live canvas (already rendered by RAF loop)
+    if (canvas2d && canvas2d.width > 0 && canvas2d.height > 0) {
+      const dpr  = window.devicePixelRatio || 1
+      const srcW = Math.round(artW * zoom * dpr)
+      const srcH = Math.round(artH * zoom * dpr)
+      octx.drawImage(canvas2d, 0, 0, srcW, srcH, 0, 0, artW, artH)
+    }
 
     const blob = await new Promise<Blob>(res =>
       offscreen.toBlob(b => res(b!), 'image/png')
@@ -458,8 +458,8 @@
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   function handleKeyDown(e: KeyboardEvent) {
-    const tag = (e.target as HTMLElement).tagName
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return
+    const el = e.target as HTMLElement
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return
 
     if (e.key === 'Escape') { activeShapeId = null }
     if (e.key === '0') { e.preventDefault(); fit() }

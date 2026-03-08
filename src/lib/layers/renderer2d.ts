@@ -1,4 +1,4 @@
-import type { Gradient, Layer, ShapeTransform } from './types'
+import type { Gradient, Layer, ShapeEffect, ShapeTransform } from './types'
 
 // ── Gradient helpers ──────────────────────────────────────────────────────────
 
@@ -59,13 +59,132 @@ function ptsBBox(pts: number[], artW: number, artH: number): [number, number, nu
   return [minX, minY, maxX - minX, maxY - minY]
 }
 
+// ── Shape effects ─────────────────────────────────────────────────────────────
+
+function applyBevel(
+  ctx: CanvasRenderingContext2D,
+  buildPath: () => void,
+  bx: number, by: number, bw: number, bh: number,
+  opacity: number,
+): void {
+  ctx.save()
+  buildPath()
+  ctx.clip()
+  ctx.globalAlpha = 1
+
+  // Highlight from top-left
+  const hl = ctx.createLinearGradient(bx, by, bx + bw * 0.7, by + bh * 0.7)
+  hl.addColorStop(0, `rgba(255,255,255,${opacity * 0.7})`)
+  hl.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = hl
+  ctx.fillRect(bx, by, bw, bh)
+
+  // Shadow from bottom-right
+  const sh = ctx.createLinearGradient(bx + bw, by + bh, bx + bw * 0.3, by + bh * 0.3)
+  sh.addColorStop(0, `rgba(0,0,0,${opacity * 0.5})`)
+  sh.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = sh
+  ctx.fillRect(bx, by, bw, bh)
+
+  ctx.restore()
+}
+
+let _noiseCanvas: HTMLCanvasElement | null = null
+function getNoiseCanvas(): HTMLCanvasElement {
+  if (_noiseCanvas) return _noiseCanvas
+  _noiseCanvas = document.createElement('canvas')
+  _noiseCanvas.width = _noiseCanvas.height = 128
+  const nc = _noiseCanvas.getContext('2d')!
+  const img = nc.createImageData(128, 128)
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random() * 255 | 0
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v
+    img.data[i + 3] = 255
+  }
+  nc.putImageData(img, 0, 0)
+  return _noiseCanvas
+}
+
+function applyNoise(
+  ctx: CanvasRenderingContext2D,
+  buildPath: () => void,
+  amount: number,
+): void {
+  const pat = ctx.createPattern(getNoiseCanvas(), 'repeat')
+  if (!pat) return
+  ctx.save()
+  buildPath()
+  ctx.clip()
+  ctx.globalAlpha = amount * 0.5
+  ctx.globalCompositeOperation = 'overlay'
+  ctx.fillStyle = pat
+  ctx.fillRect(-99999, -99999, 199998, 199998)
+  ctx.restore()
+}
+
+function applyWarp(
+  ctx: CanvasRenderingContext2D,
+  bx: number, by: number, bw: number, bh: number,
+  amount: number, freq: number,
+  pixelScale: number,
+): void {
+  // Convert logical coords → physical canvas pixels
+  const pAmount = amount * pixelScale
+  const pad = Math.ceil(pAmount)
+  const rx = Math.max(0, Math.floor(bx * pixelScale) - pad)
+  const ry = Math.max(0, Math.floor(by * pixelScale) - pad)
+  const rw = Math.ceil(bw * pixelScale) + pad * 2
+  const rh = Math.ceil(bh * pixelScale) + pad * 2
+  const src = ctx.getImageData(rx, ry, rw, rh)
+  const dst = new ImageData(rw, rh)
+  for (let y = 0; y < rh; y++) {
+    for (let x = 0; x < rw; x++) {
+      // freq is in cycles/logical-px; divide physical coords back to logical
+      const dx = Math.round(pAmount * Math.sin((ry + y) / pixelScale * freq * Math.PI * 2))
+      const dy = Math.round(pAmount * Math.sin((rx + x) / pixelScale * freq * Math.PI * 2))
+      const sx = Math.max(0, Math.min(rw - 1, x + dx))
+      const sy = Math.max(0, Math.min(rh - 1, y + dy))
+      const si = (sy * rw + sx) * 4
+      const di = (y  * rw + x ) * 4
+      dst.data[di]   = src.data[si]
+      dst.data[di+1] = src.data[si+1]
+      dst.data[di+2] = src.data[si+2]
+      dst.data[di+3] = src.data[si+3]
+    }
+  }
+  ctx.putImageData(dst, rx, ry)
+}
+
+// Offscreen canvas reused for warp isolation
+let _warpCanvas: HTMLCanvasElement | null = null
+let _warpCtx: CanvasRenderingContext2D | null = null
+
+function getWarpCtx(physW: number, physH: number): CanvasRenderingContext2D {
+  if (!_warpCanvas) {
+    _warpCanvas = document.createElement('canvas')
+    _warpCtx    = _warpCanvas.getContext('2d')!
+  }
+  if (_warpCanvas.width !== physW || _warpCanvas.height !== physH) {
+    _warpCanvas.width  = physW
+    _warpCanvas.height = physH
+  }
+  return _warpCtx!
+}
+
+// ── Main renderer ─────────────────────────────────────────────────────────────
+
 export function renderLayers2D(
   ctx: CanvasRenderingContext2D,
   layers: Layer[],
   artW: number,
   artH: number,
+  clear = true,
 ): void {
-  ctx.clearRect(0, 0, artW, artH)
+  // Physical pixels per logical pixel (zoom * devicePixelRatio).
+  // getImageData/putImageData always work in physical pixel coords.
+  const pixelScale = ctx.getTransform().a || 1
+
+  if (clear) ctx.clearRect(0, 0, artW, artH)
 
   for (const layer of layers) {
     if (!layer.visible) continue
@@ -77,7 +196,7 @@ export function renderLayers2D(
     }
 
     for (const shape of layer.shapes) {
-      const { type, color, geom, stroke } = shape
+      const { type, color, geom, stroke, effects } = shape
 
       const px   = geom.x * artW
       const py   = geom.y * artH
@@ -86,53 +205,75 @@ export function renderLayers2D(
       const left = px - pw / 2
       const top  = py - ph / 2
 
-      // Build a (re-usable) path for filled shapes
+      const shadowFx = effects?.find((e: ShapeEffect) => e.type === 'shadow')
+      const blurFx   = effects?.find((e: ShapeEffect) => e.type === 'blur')
+      const bevelFx  = effects?.find((e: ShapeEffect) => e.type === 'bevel')
+      const noiseFx  = effects?.find((e: ShapeEffect) => e.type === 'noise')
+      const warpFx   = effects?.find((e: ShapeEffect) => e.type === 'warp')
+
+      // For warp: draw to an isolated offscreen canvas so warp only distorts
+      // the shape's own pixels, then composite onto the main canvas.
+      let dc: CanvasRenderingContext2D
+      if (warpFx) {
+        dc = getWarpCtx(ctx.canvas.width, ctx.canvas.height)
+        dc.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+        dc.setTransform(ctx.getTransform())
+      } else {
+        dc = ctx
+      }
+
+      // Build a (re-usable) path for filled shapes — uses dc
       function buildShapePath() {
-        ctx.beginPath()
+        dc.beginPath()
         if (type === 'rect') {
-          ctx.rect(left, top, pw, ph)
+          dc.rect(left, top, pw, ph)
         } else if (type === 'ellipse') {
-          ctx.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2)
+          dc.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2)
         } else if (type === 'triangle') {
           const p = shape.pts!
-          ctx.moveTo(p[0] * artW, p[1] * artH)
-          ctx.lineTo(p[2] * artW, p[3] * artH)
-          ctx.lineTo(p[4] * artW, p[5] * artH)
-          ctx.closePath()
+          dc.moveTo(p[0] * artW, p[1] * artH)
+          dc.lineTo(p[2] * artW, p[3] * artH)
+          dc.lineTo(p[4] * artW, p[5] * artH)
+          dc.closePath()
         }
+      }
+
+      // One save wraps transform + effects for the whole shape
+      dc.save()
+      if (blurFx)   dc.filter = `blur(${blurFx.blur ?? 4}px)`
+      if (shadowFx) {
+        dc.shadowColor   = hexToRgba(shadowFx.color ?? '#000000', shadowFx.opacity ?? 0.5)
+        dc.shadowBlur    = shadowFx.blur    ?? 10
+        dc.shadowOffsetX = shadowFx.offsetX ?? 0
+        dc.shadowOffsetY = shadowFx.offsetY ?? 4
       }
 
       if (type === 'line' || type === 'curve') {
         const p = shape.pts!
         const [bl, bt, bw, bh] = ptsBBox(p, artW, artH)
         if (shape.transform) {
-          const midX = type === 'curve'
-            ? (p[0] + p[4]) / 2 * artW
-            : (p[0] + p[2]) / 2 * artW
-          const midY = type === 'curve'
-            ? (p[1] + p[5]) / 2 * artH
-            : (p[1] + p[3]) / 2 * artH
-          ctx.save()
-          applyTransform(ctx, shape.transform, midX, midY)
+          const midX = type === 'curve' ? (p[0] + p[4]) / 2 * artW : (p[0] + p[2]) / 2 * artW
+          const midY = type === 'curve' ? (p[1] + p[5]) / 2 * artH : (p[1] + p[3]) / 2 * artH
+          applyTransform(dc, shape.transform, midX, midY)
         }
         if (color.gradient) {
-          ctx.globalAlpha = 1
-          ctx.strokeStyle = makeGradient(ctx, color.gradient, bl, bt, bw, bh)
+          dc.globalAlpha = 1
+          dc.strokeStyle = makeGradient(dc, color.gradient, bl, bt, bw, bh)
         } else {
-          ctx.globalAlpha = color.opacity
-          ctx.strokeStyle = color.hex
+          dc.globalAlpha = color.opacity
+          dc.strokeStyle = color.hex
         }
-        ctx.lineWidth   = (shape.strokeWidth ?? 0.004) * artW
-        ctx.lineCap     = 'round'
-        ctx.beginPath()
-        ctx.moveTo(p[0] * artW, p[1] * artH)
+        dc.lineWidth = (shape.strokeWidth ?? 0.004) * artW
+        dc.lineCap   = 'round'
+        dc.beginPath()
+        dc.moveTo(p[0] * artW, p[1] * artH)
         if (type === 'curve') {
-          ctx.quadraticCurveTo(p[2] * artW, p[3] * artH, p[4] * artW, p[5] * artH)
+          dc.quadraticCurveTo(p[2] * artW, p[3] * artH, p[4] * artW, p[5] * artH)
         } else {
-          ctx.lineTo(p[2] * artW, p[3] * artH)
+          dc.lineTo(p[2] * artW, p[3] * artH)
         }
-        ctx.stroke()
-        if (shape.transform) ctx.restore()
+        dc.stroke()
+        dc.restore()
         continue
       }
 
@@ -148,72 +289,110 @@ export function renderLayers2D(
           pivotX = (p[0] + p[2] + p[4]) / 3 * artW
           pivotY = (p[1] + p[3] + p[5]) / 3 * artH
         }
-        ctx.save()
-        applyTransform(ctx, shape.transform, pivotX, pivotY)
+        applyTransform(dc, shape.transform, pivotX, pivotY)
       }
 
       // Fill
       if (color.gradient) {
-        ctx.globalAlpha = 1
-        ctx.fillStyle   = makeGradient(ctx, color.gradient, gleft, gtop, gpw, gph)
+        dc.globalAlpha = 1
+        dc.fillStyle   = makeGradient(dc, color.gradient, gleft, gtop, gpw, gph)
       } else {
-        ctx.globalAlpha = color.opacity
-        ctx.fillStyle   = color.hex
+        dc.globalAlpha = color.opacity
+        dc.fillStyle   = color.hex
       }
       buildShapePath()
-      ctx.fill()
+      dc.fill()
 
       // Stroke
       if (stroke) {
         const lw    = stroke.width * artW
         const align = stroke.align ?? 'center'
         if (stroke.gradient) {
-          ctx.strokeStyle = makeGradient(ctx, stroke.gradient, gleft, gtop, gpw, gph)
+          dc.strokeStyle = makeGradient(dc, stroke.gradient, gleft, gtop, gpw, gph)
         } else {
-          ctx.strokeStyle = stroke.hex
+          dc.strokeStyle = stroke.hex
         }
-        ctx.lineJoin    = stroke.join ?? 'miter'
+        dc.lineJoin = stroke.join ?? 'miter'
 
         if (align === 'center') {
-          ctx.globalAlpha = stroke.gradient ? 1 : stroke.opacity
-          ctx.lineWidth   = lw
+          dc.globalAlpha = stroke.gradient ? 1 : stroke.opacity
+          dc.lineWidth   = lw
           buildShapePath()
-          ctx.stroke()
+          dc.stroke()
         } else if (align === 'inner') {
-          ctx.save()
+          dc.save()
           buildShapePath()
-          ctx.clip()
-          ctx.globalAlpha = stroke.gradient ? 1 : stroke.opacity
-          ctx.lineWidth   = lw * 2
+          dc.clip()
+          dc.globalAlpha = stroke.gradient ? 1 : stroke.opacity
+          dc.lineWidth   = lw * 2
           buildShapePath()
-          ctx.stroke()
-          ctx.restore()
+          dc.stroke()
+          dc.restore()
         } else { // outer
-          ctx.save()
-          ctx.beginPath()
-          ctx.rect(-1, -1, artW + 2, artH + 2)
-          // add shape as sub-path; even-odd rule excludes the interior
+          dc.save()
+          dc.beginPath()
+          dc.rect(-1, -1, artW + 2, artH + 2)
           if (type === 'rect') {
-            ctx.rect(left, top, pw, ph)
+            dc.rect(left, top, pw, ph)
           } else if (type === 'ellipse') {
-            ctx.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2)
+            dc.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2)
           } else if (type === 'triangle') {
             const p = shape.pts!
-            ctx.moveTo(p[0] * artW, p[1] * artH)
-            ctx.lineTo(p[2] * artW, p[3] * artH)
-            ctx.lineTo(p[4] * artW, p[5] * artH)
-            ctx.closePath()
+            dc.moveTo(p[0] * artW, p[1] * artH)
+            dc.lineTo(p[2] * artW, p[3] * artH)
+            dc.lineTo(p[4] * artW, p[5] * artH)
+            dc.closePath()
           }
-          ctx.clip('evenodd')
-          ctx.globalAlpha = stroke.gradient ? 1 : stroke.opacity
-          ctx.lineWidth   = lw * 2
+          dc.clip('evenodd')
+          dc.globalAlpha = stroke.gradient ? 1 : stroke.opacity
+          dc.lineWidth   = lw * 2
           buildShapePath()
-          ctx.stroke()
-          ctx.restore()
+          dc.stroke()
+          dc.restore()
         }
       }
 
-      if (shape.transform) ctx.restore()
+      // Clear shadow/blur before post-draw effects so they don't stack
+      dc.shadowColor = 'transparent'
+      dc.filter      = 'none'
+
+      if (bevelFx) applyBevel(dc, buildShapePath, gleft, gtop, gpw, gph, bevelFx.opacity ?? 0.6)
+      if (noiseFx) applyNoise(dc, buildShapePath, noiseFx.amount ?? 0.3)
+
+      if (warpFx) {
+        // Compute rotation-aware bounding box
+        let [wl, wt, ww, wh] = [gleft, gtop, gpw, gph] as [number, number, number, number]
+        const rot = shape.transform?.rotate
+        if (rot) {
+          const θ = rot * Math.PI / 180
+          if (type === 'triangle' && shape.pts) {
+            const pcx = (shape.pts[0] + shape.pts[2] + shape.pts[4]) / 3 * artW
+            const pcy = (shape.pts[1] + shape.pts[3] + shape.pts[5]) / 3 * artH
+            const rpts: number[] = []
+            for (let i = 0; i < shape.pts.length; i += 2) {
+              const dx = shape.pts[i] * artW - pcx, dy = shape.pts[i + 1] * artH - pcy
+              rpts.push((pcx + dx * Math.cos(θ) - dy * Math.sin(θ)) / artW,
+                        (pcy + dx * Math.sin(θ) + dy * Math.cos(θ)) / artH)
+            }
+            ;[wl, wt, ww, wh] = ptsBBox(rpts, artW, artH)
+          } else {
+            const rw = Math.abs(gpw * Math.cos(θ)) + Math.abs(gph * Math.sin(θ))
+            const rh = Math.abs(gpw * Math.sin(θ)) + Math.abs(gph * Math.cos(θ))
+            ;[wl, wt, ww, wh] = [px - rw / 2, py - rh / 2, rw, rh]
+          }
+        }
+        // Warp operates on the offscreen (shape-only pixels on transparent bg)
+        dc.restore()
+        applyWarp(dc, wl, wt, ww, wh, warpFx.amount ?? 8, warpFx.freq ?? 0.05, pixelScale)
+        // Composite the warped offscreen onto the main canvas
+        ctx.save()
+        ctx.setTransform(1, 0, 0, 1, 0, 0)  // reset to physical pixel coords for drawImage
+        ctx.drawImage(_warpCanvas!, 0, 0)
+        ctx.restore()
+        continue
+      }
+
+      dc.restore()
     }
   }
 

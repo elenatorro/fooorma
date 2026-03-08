@@ -115,6 +115,8 @@ export class WebGPURenderer implements Renderer {
   async exportPNG(): Promise<Blob> {
     // Render one final frame to ensure content is fresh
     this.render(performance.now())
+    // Wait for the GPU queue to finish before reading the canvas
+    await this.device.queue.onSubmittedWorkDone()
 
     return new Promise((resolve, reject) => {
       this.canvas.toBlob(blob => {

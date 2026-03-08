@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SketchDef } from '../lib/sketches/types'
-  import type { Layer, Shape, ShapeGeom } from '../lib/layers/types'
+  import type { Layer, Shape, ShapeEffect, ShapeGeom } from '../lib/layers/types'
   import type { Palette } from '../lib/palettes/index'
   import { paletteVarName } from '../lib/palettes/index'
   import { evaluateQuery } from '../lib/query/index'
@@ -114,6 +114,11 @@
     { name: 'stroke',    sig: "hex, opacity?, width?, align?, join?",           code: "stroke('#000000', 1, 0.005)" },
     { name: 'rotate',    sig: 'deg',                                           code: "rotate(45)" },
     { name: 'transform', sig: '{ rotate?, scaleX?, scaleY?, skewX?, skewY? }', code: "transform({ rotate: 45, scaleX: 1.2 })" },
+    { name: 'shadow',   sig: "color?, opacity?, blur?, offsetX?, offsetY?",   code: "shadow('#000000', 0.5, 10, 0, 4)" },
+    { name: 'blur',     sig: 'amount?',                                        code: "blur(4)" },
+    { name: 'bevel',    sig: 'intensity?',                                     code: "bevel(0.6)" },
+    { name: 'noise',    sig: 'amount?',                                        code: "noise(0.3)" },
+    { name: 'warp',     sig: 'strength?, freq?',                              code: "warp(8, 0.05)" },
     { name: 'grad',      sig: 'angle, …stops',                                code: "grad(90, '#8b5cf6', '#4ecdc4')" },
     { name: 'radGrad',  sig: '…stops',                                       code: "radGrad('#8b5cf6', '#4ecdc4')" },
     { name: 'repeat',   sig: 'n, (i, t) => { }',                             code: "repeat(8, (i, t) => {\n  rect((i + 0.5) / 8, 0.5, 0.1, 0.1)\n})" },
@@ -194,6 +199,24 @@
     if (s === 'curve')
       return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.03 + t * 0.04\n  curve(cx - d, cy, cx, cy - d, cx + d, cy, ${color}, ${op})\n})`
     return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.02 + t * 0.03\n  triangle(cx, cy - d, cx - d, cy + d, cx + d, cy + d, ${color}, ${op})\n})`
+  }
+
+  // ── Shape effect helpers ───────────────────────────────────────────────────
+  function toggleFx(type: ShapeEffect['type'], defaults: Partial<ShapeEffect>) {
+    if (!activeLayer || !activeShape) return
+    const has = activeShape.effects?.some(e => e.type === type)
+    onUpdateShape(activeLayer.id, activeShape.id, {
+      effects: has
+        ? (activeShape.effects ?? []).filter(e => e.type !== type)
+        : [...(activeShape.effects ?? []), { type, ...defaults } as ShapeEffect],
+    })
+  }
+
+  function setFx(type: ShapeEffect['type'], update: Partial<ShapeEffect>) {
+    if (!activeLayer || !activeShape?.effects) return
+    onUpdateShape(activeLayer.id, activeShape.id, {
+      effects: activeShape.effects.map(e => e.type === type ? { ...e, ...update } : e),
+    })
   }
 
   function startRename(layer: Layer) {
@@ -829,61 +852,173 @@
 
   <!-- ── Effects tab ── -->
   {#if activeTab === 'effects'}
+
+    <!-- Per-shape shaders -->
+    <section class="section">
+      <h2 class="section-title">Shaders</h2>
+      {#if activeShape && activeLayer}
+        {@const shadowFx = activeShape.effects?.find(e => e.type === 'shadow')}
+        {@const blurFx   = activeShape.effects?.find(e => e.type === 'blur')}
+        {@const bevelFx  = activeShape.effects?.find(e => e.type === 'bevel')}
+        {@const noiseFx  = activeShape.effects?.find(e => e.type === 'noise')}
+        {@const warpFx   = activeShape.effects?.find(e => e.type === 'warp')}
+
+        <!-- Shadow -->
+        <div class="fx-row">
+          <input type="checkbox" id="fx-shadow" checked={!!shadowFx}
+            onchange={() => toggleFx('shadow', { color: '#000000', opacity: 0.5, blur: 10, offsetX: 0, offsetY: 4 })} />
+          <label for="fx-shadow" class="fx-label">Drop Shadow</label>
+        </div>
+        {#if shadowFx}
+          <div class="fx-params">
+            <div class="prop-row">
+              <label class="prop-label">Color</label>
+              <ColorPicker hex={shadowFx.color ?? '#000000'} showOpacity={false}
+                onChange={(h) => setFx('shadow', { color: h })} />
+            </div>
+            {#each [
+              { id: 'sh-op',  label: 'Opacity', key: 'opacity', min: 0,   max: 1,  step: 0.01, val: shadowFx.opacity ?? 0.5,  fmt: (v: number) => v.toFixed(2) },
+              { id: 'sh-bl',  label: 'Blur',    key: 'blur',    min: 0,   max: 40, step: 1,    val: shadowFx.blur    ?? 10,   fmt: (v: number) => String(v|0) },
+              { id: 'sh-ox',  label: 'X',       key: 'offsetX', min: -40, max: 40, step: 1,    val: shadowFx.offsetX ?? 0,    fmt: (v: number) => String(v|0) },
+              { id: 'sh-oy',  label: 'Y',       key: 'offsetY', min: -40, max: 40, step: 1,    val: shadowFx.offsetY ?? 4,    fmt: (v: number) => String(v|0) },
+            ] as p}
+              <div class="param-row">
+                <label class="param-label" for={p.id}>{p.label}</label>
+                <div class="param-control">
+                  <input id={p.id} type="range" min={p.min} max={p.max} step={p.step} value={p.val}
+                    oninput={(e) => setFx('shadow', { [p.key]: parseFloat((e.target as HTMLInputElement).value) })} />
+                  <span class="param-val">{p.fmt(p.val)}</span>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Blur -->
+        <div class="fx-row">
+          <input type="checkbox" id="fx-blur" checked={!!blurFx}
+            onchange={() => toggleFx('blur', { blur: 4 })} />
+          <label for="fx-blur" class="fx-label">Blur</label>
+        </div>
+        {#if blurFx}
+          <div class="fx-params">
+            <div class="param-row">
+              <label class="param-label" for="bl-am">Amount</label>
+              <div class="param-control">
+                <input id="bl-am" type="range" min="0" max="20" step="0.5" value={blurFx.blur ?? 4}
+                  oninput={(e) => setFx('blur', { blur: parseFloat((e.target as HTMLInputElement).value) })} />
+                <span class="param-val">{(blurFx.blur ?? 4).toFixed(1)}</span>
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Bevel -->
+        <div class="fx-row">
+          <input type="checkbox" id="fx-bevel" checked={!!bevelFx}
+            onchange={() => toggleFx('bevel', { opacity: 0.6 })} />
+          <label for="fx-bevel" class="fx-label">Bevel</label>
+        </div>
+        {#if bevelFx}
+          <div class="fx-params">
+            <div class="param-row">
+              <label class="param-label" for="bv-op">Intensity</label>
+              <div class="param-control">
+                <input id="bv-op" type="range" min="0" max="1" step="0.01" value={bevelFx.opacity ?? 0.6}
+                  oninput={(e) => setFx('bevel', { opacity: parseFloat((e.target as HTMLInputElement).value) })} />
+                <span class="param-val">{(bevelFx.opacity ?? 0.6).toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Noise -->
+        <div class="fx-row">
+          <input type="checkbox" id="fx-noise" checked={!!noiseFx}
+            onchange={() => toggleFx('noise', { amount: 0.3 })} />
+          <label for="fx-noise" class="fx-label">Noise</label>
+        </div>
+        {#if noiseFx}
+          <div class="fx-params">
+            <div class="param-row">
+              <label class="param-label" for="ns-am">Amount</label>
+              <div class="param-control">
+                <input id="ns-am" type="range" min="0" max="1" step="0.01" value={noiseFx.amount ?? 0.3}
+                  oninput={(e) => setFx('noise', { amount: parseFloat((e.target as HTMLInputElement).value) })} />
+                <span class="param-val">{(noiseFx.amount ?? 0.3).toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Warp -->
+        <div class="fx-row">
+          <input type="checkbox" id="fx-warp" checked={!!warpFx}
+            onchange={() => toggleFx('warp', { amount: 8, freq: 0.05 })} />
+          <label for="fx-warp" class="fx-label">Warp</label>
+        </div>
+        {#if warpFx}
+          <div class="fx-params">
+            {#each [
+              { id: 'wp-am', label: 'Strength', key: 'amount', min: 0, max: 40,   step: 0.5,  val: warpFx.amount ?? 8,    fmt: (v: number) => v.toFixed(1) },
+              { id: 'wp-fr', label: 'Frequency', key: 'freq',  min: 0.005, max: 0.2, step: 0.005, val: warpFx.freq ?? 0.05, fmt: (v: number) => v.toFixed(3) },
+            ] as p}
+              <div class="param-row">
+                <label class="param-label" for={p.id}>{p.label}</label>
+                <div class="param-control">
+                  <input id={p.id} type="range" min={p.min} max={p.max} step={p.step} value={p.val}
+                    oninput={(e) => setFx('warp', { [p.key]: parseFloat((e.target as HTMLInputElement).value) })} />
+                  <span class="param-val">{p.fmt(p.val)}</span>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+      {:else}
+        <p class="fx-hint">Select a shape in the Layers tab to apply shaders.</p>
+      {/if}
+    </section>
+
+    <!-- GPU layer -->
     <section class="section">
       <div class="effects-header">
-        <h2 class="section-title" style:margin-bottom="0">Effects</h2>
-        <button
-          class="effects-toggle"
-          class:on={effectsEnabled}
-          onclick={onToggleEffects}
-        >{effectsEnabled ? 'On' : 'Off'}</button>
+        <h2 class="section-title" style:margin-bottom="0">GPU Layer</h2>
+        <button class="effects-toggle" class:on={effectsEnabled} onclick={onToggleEffects}>
+          {effectsEnabled ? 'On' : 'Off'}
+        </button>
       </div>
     </section>
 
     {#if effectsEnabled}
-    <section class="section">
-      <h2 class="section-title">Presets</h2>
-      <div class="grid">
-        {#each sketches as s}
-          <button
-            class="preset-btn"
-            class:active={s.id === activeSketch.id}
-            onclick={() => onSketchChange(s)}
-            title={s.name}
-          >
-            <span class="preset-icon">{s.name[0]}</span>
-            <span class="preset-name">{s.name}</span>
-          </button>
-        {/each}
-      </div>
-    </section>
-
-    {#if activeSketch.params.length > 0}
       <section class="section">
-        <h2 class="section-title">Parameters</h2>
-        <div class="params">
+        <div class="grid">
+          {#each sketches as s}
+            <button class="preset-btn" class:active={s.id === activeSketch.id}
+              onclick={() => onSketchChange(s)} title={s.name}>
+              <span class="preset-icon">{s.name[0]}</span>
+              <span class="preset-name">{s.name}</span>
+            </button>
+          {/each}
+        </div>
+      </section>
+      {#if activeSketch.params.length > 0}
+        <section class="section">
           {#each activeSketch.params as p}
             {@const val = params[p.id] ?? p.default}
             <div class="param-row">
               <label for={`param-${p.id}`} class="param-label">{p.label}</label>
               <div class="param-control">
-                <input
-                  id={`param-${p.id}`}
-                  type="range"
-                  min={p.min}
-                  max={p.max}
-                  step={p.step ?? 0.01}
-                  value={val}
-                  oninput={(e) => onParamChange(p.id, parseFloat((e.target as HTMLInputElement).value))}
-                />
+                <input id={`param-${p.id}`} type="range" min={p.min} max={p.max} step={p.step ?? 0.01} value={val}
+                  oninput={(e) => onParamChange(p.id, parseFloat((e.target as HTMLInputElement).value))} />
                 <span class="param-val">{val.toFixed(p.step && p.step >= 1 ? 0 : 2)}</span>
               </div>
             </div>
           {/each}
-        </div>
-      </section>
+        </section>
+      {/if}
     {/if}
-    {/if}
+
   {/if}
 </aside>
 
@@ -1349,6 +1484,33 @@
   }
   .effects-toggle:hover { border-color: #555; color: #aaa; }
   .effects-toggle.on { border-color: #8b5cf6; background: #1a1428; color: #c4b0f8; }
+
+  /* ── Shader effects ── */
+  .fx-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0 3px;
+    border-bottom: 1px solid #1e1e22;
+  }
+  .fx-row:last-of-type { border-bottom: none; }
+  .fx-label {
+    font-size: 11px;
+    color: #c8c8d0;
+    cursor: pointer;
+    flex: 1;
+  }
+  .fx-params {
+    padding: 6px 0 4px 16px;
+    border-bottom: 1px solid #1e1e22;
+  }
+  .fx-hint {
+    font-size: 11px;
+    color: #444454;
+    text-align: center;
+    padding: 16px 0 8px;
+    margin: 0;
+  }
 
   /* ── Shape list (type selector) ── */
   .shape-list {

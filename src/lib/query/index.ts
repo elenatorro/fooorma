@@ -1,4 +1,4 @@
-import type { ColorStop, Gradient, LinearGradient, RadialGradient, Shape, ShapeStroke, ShapeTransform, ShapeType } from '../layers/types'
+import type { ColorStop, Gradient, LinearGradient, RadialGradient, Shape, ShapeEffect, ShapeStroke, ShapeTransform, ShapeType } from '../layers/types'
 import { paletteVarName } from '../palettes/index'
 
 /** Serialize manual shapes to equivalent query code. */
@@ -7,7 +7,6 @@ export function shapesToCode(shapes: Shape[]): string {
   const f = (n: number) => parseFloat(n.toFixed(4))
 
   function stopStr(st: ColorStop): string {
-    // Simple stop: opacity=1, position will be distributed evenly → just hex string
     return `['${st.hex}', ${f(st.opacity)}, ${f(st.pos)}]`
   }
 
@@ -48,21 +47,51 @@ export function shapesToCode(shapes: Shape[]): string {
     return `transform({ ${parts.join(', ')} })`
   }
 
-  return shapes.map(({ type, geom: { x, y, w, h }, color, stroke, pts, strokeWidth, transform }) => {
+  function effectStr(e: ShapeEffect): string {
+    switch (e.type) {
+      case 'shadow': {
+        const col = e.color   ?? '#000000'
+        const op  = e.opacity ?? 0.5
+        const bl  = e.blur    ?? 10
+        const ox  = e.offsetX ?? 0
+        const oy  = e.offsetY ?? 4
+        if (col === '#000000' && op === 0.5 && bl === 10 && ox === 0 && oy === 4) return 'shadow()'
+        if (op  === 0.5 && bl === 10 && ox === 0 && oy === 4) return `shadow('${col}')`
+        if (bl  === 10 && ox === 0 && oy === 4) return `shadow('${col}', ${f(op)})`
+        if (ox  === 0 && oy === 4) return `shadow('${col}', ${f(op)}, ${f(bl)})`
+        return `shadow('${col}', ${f(op)}, ${f(bl)}, ${f(ox)}, ${f(oy)})`
+      }
+      case 'blur':
+        return (e.blur ?? 4) === 4 ? 'blur()' : `blur(${f(e.blur!)})`
+      case 'bevel':
+        return (e.opacity ?? 0.6) === 0.6 ? 'bevel()' : `bevel(${f(e.opacity!)})`
+      case 'noise':
+        return (e.amount ?? 0.3) === 0.3 ? 'noise()' : `noise(${f(e.amount!)})`
+      case 'warp': {
+        const amt  = e.amount ?? 8
+        const freq = e.freq   ?? 0.05
+        if (amt === 8 && freq === 0.05) return 'warp()'
+        if (freq === 0.05) return `warp(${f(amt)})`
+        return `warp(${f(amt)}, ${f(freq)})`
+      }
+    }
+  }
+
+  return shapes.map(({ type, geom: { x, y, w, h }, color, stroke, pts, strokeWidth, transform, effects }) => {
     const { hex, opacity, gradient } = color
     const colorArg = gradient ? gradStr(gradient) : `'${hex}'`
     const opArg    = gradient ? '1' : String(f(opacity))
-    const tr = transform ? `, ${transformStr(transform)}` : ''
+    const tr  = transform ? `, ${transformStr(transform)}` : ''
+    const efx = effects?.length ? ', ' + effects.map(effectStr).join(', ') : ''
     if (pts) {
       const coords = pts.map(f).join(', ')
       const sw = strokeWidth !== undefined ? `, ${f(strokeWidth)}` : ''
       const sk = stroke ? `, ${strokeStr(stroke)}` : ''
-      if (type === 'triangle') return `triangle(${coords}, ${colorArg}, ${opArg}${sk}${tr})`
-      return `${type}(${coords}, ${colorArg}, ${opArg}${sw}${tr})`
+      if (type === 'triangle') return `triangle(${coords}, ${colorArg}, ${opArg}${sk}${tr}${efx})`
+      return `${type}(${coords}, ${colorArg}, ${opArg}${sw}${tr}${efx})`
     }
-    // rect / ellipse: no stroke → transform goes in stroke slot; stroke + transform → both appended
     const sk = stroke ? `, ${strokeStr(stroke)}` : ''
-    return `${type}(${f(x)}, ${f(y)}, ${f(w)}, ${f(h)}, ${colorArg}, ${opArg}${sk}${tr})`
+    return `${type}(${f(x)}, ${f(y)}, ${f(w)}, ${f(h)}, ${colorArg}, ${opArg}${sk}${tr}${efx})`
   }).join('\n')
 }
 
@@ -82,7 +111,7 @@ export function evaluateQuery(
   const shapes: Shape[] = []
   const errors: string[] = []
 
-  // ── Gradient helpers (exposed in sandbox) ────────────────────────────────
+  // ── Gradient helpers ──────────────────────────────────────────────────────
   type StopInput = string | [string, number?, number?]
 
   function parseStops(args: StopInput[]): ColorStop[] {
@@ -100,19 +129,47 @@ export function evaluateQuery(
   const radGrad = (...args: StopInput[]): RadialGradient =>
     ({ type: 'radial', cx: 0.5, cy: 0.5, stops: parseStops(args) })
 
-  // ── Transform helpers ─────────────────────────────────────────────────────
+  // ── Type guards ───────────────────────────────────────────────────────────
   function isTransform(v: unknown): v is ShapeTransform {
     return typeof v === 'object' && v !== null && !Array.isArray(v) &&
-      !('width' in v) && !('stops' in v) && !('hex' in v) &&
+      !('width' in v) && !('stops' in v) && !('hex' in v) && !('type' in v) &&
       ('rotate' in v || 'scaleX' in v || 'scaleY' in v || 'skewX' in v || 'skewY' in v)
   }
 
+  function isEffect(v: unknown): v is ShapeEffect {
+    return typeof v === 'object' && v !== null && 'type' in v &&
+      ['shadow', 'blur', 'bevel', 'noise', 'warp'].includes((v as ShapeEffect).type)
+  }
+
+  /** Scan trailing args and sort into stroke, transform, and effects buckets. */
+  function collectTrailing(trailing: unknown[]): { stroke?: ShapeStroke; transform?: ShapeTransform; effects: ShapeEffect[] } {
+    let stroke: ShapeStroke | undefined
+    let xform: ShapeTransform | undefined
+    const effects: ShapeEffect[] = []
+    for (let i = 0; i < trailing.length; i++) {
+      const arg = trailing[i]
+      if (arg === null || arg === undefined) continue
+      if (typeof arg === 'object') {
+        if (isEffect(arg))     effects.push(arg as ShapeEffect)
+        else if (isTransform(arg)) xform = arg as ShapeTransform
+        else if ('width' in (arg as object)) stroke = arg as ShapeStroke
+      } else if (typeof arg === 'string') {
+        // Legacy positional stroke: hex, [opacity, [width]]
+        const opacity = typeof trailing[i + 1] === 'number' ? (trailing[i + 1] as number) : 1
+        const width   = typeof trailing[i + 2] === 'number' ? (trailing[i + 2] as number) : 0.005
+        stroke = { hex: arg, opacity, width, align: 'center', join: 'miter' }
+        i += 2
+      }
+    }
+    return { stroke, transform: xform, effects }
+  }
+
+  // ── Transform helpers ─────────────────────────────────────────────────────
   const rotate    = (deg: number): ShapeTransform => ({ rotate: deg })
   const transform = (opts: ShapeTransform): ShapeTransform => ({ ...opts })
 
-  // ── Stroke helper (exposed as `stroke()` in sandbox) ─────────────────────
+  // ── Stroke helper ─────────────────────────────────────────────────────────
   type ColorArg = string | Gradient
-  type StrokeArg = ShapeStroke | ColorArg | undefined
 
   function mkStroke(
     colorArg: ColorArg = '#000000',
@@ -127,13 +184,21 @@ export function evaluateQuery(
     return { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, width, align, join, gradient: colorArg }
   }
 
-  function resolveStroke(strokeArg: StrokeArg, legacyOpacity: number, legacyWidth?: number): ShapeStroke | undefined {
-    if (strokeArg === undefined) return undefined
-    if (typeof strokeArg === 'object' && 'width' in strokeArg) return strokeArg as ShapeStroke
-    // backward-compat positional form or gradient
-    if (legacyWidth !== undefined) return mkStroke(strokeArg as ColorArg, legacyOpacity, legacyWidth)
-    return undefined
-  }
+  // ── Effect factories ──────────────────────────────────────────────────────
+  const shadow = (color = '#000000', opacity = 0.5, blur = 10, offsetX = 0, offsetY = 4): ShapeEffect =>
+    ({ type: 'shadow', color, opacity, blur, offsetX, offsetY })
+
+  const blur = (amount = 4): ShapeEffect =>
+    ({ type: 'blur', blur: amount })
+
+  const bevel = (intensity = 0.6): ShapeEffect =>
+    ({ type: 'bevel', opacity: intensity })
+
+  const noise = (amount = 0.3): ShapeEffect =>
+    ({ type: 'noise', amount })
+
+  const warp = (amount = 8, freq = 0.05): ShapeEffect =>
+    ({ type: 'warp', amount, freq })
 
   // ── Drawing primitives ────────────────────────────────────────────────────
   function makeShape(
@@ -141,32 +206,29 @@ export function evaluateQuery(
     x: number, y: number, w: number, h: number,
     colorArg: ColorArg = '#8b5cf6',
     opacity  = 0.85,
-    strokeArg?: StrokeArg | ShapeTransform,
-    strokeOpacity = 1,
-    strokeWidth?: number,
-    transformArg?: ShapeTransform,
+    stroke?: ShapeStroke,
+    effects: ShapeEffect[] = [],
+    xform?: ShapeTransform,
   ): void {
     if (shapes.length >= MAX_SHAPES) return
     const shapeColor = typeof colorArg === 'string'
       ? { hex: colorArg, opacity: Math.max(0, Math.min(1, opacity)) }
       : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
-    const shape: Shape = {
-      id:    crypto.randomUUID(),
-      type,
-      color: shapeColor,
-      geom:  { x, y, w, h },
-    }
-    const actualTransform = isTransform(strokeArg) ? strokeArg : transformArg
-    const resolvedStroke  = isTransform(strokeArg) ? undefined : resolveStroke(strokeArg as StrokeArg, strokeOpacity, strokeWidth)
-    if (resolvedStroke) shape.stroke = resolvedStroke
-    if (actualTransform) shape.transform = actualTransform
+    const shape: Shape = { id: crypto.randomUUID(), type, color: shapeColor, geom: { x, y, w, h } }
+    if (stroke)          shape.stroke    = stroke
+    if (xform)           shape.transform = xform
+    if (effects.length)  shape.effects   = effects
     shapes.push(shape)
   }
 
-  const rect    = (x: number, y: number, w: number, h: number, colorArg?: ColorArg, opacity?: number, strokeArg?: StrokeArg | ShapeTransform, strokeOpacity?: number, strokeWidth?: number, transformArg?: ShapeTransform) =>
-    makeShape('rect',    x, y, w, h, colorArg, opacity, strokeArg, strokeOpacity, strokeWidth, transformArg)
-  const ellipse = (x: number, y: number, w: number, h: number, colorArg?: ColorArg, opacity?: number, strokeArg?: StrokeArg | ShapeTransform, strokeOpacity?: number, strokeWidth?: number, transformArg?: ShapeTransform) =>
-    makeShape('ellipse', x, y, w, h, colorArg, opacity, strokeArg, strokeOpacity, strokeWidth, transformArg)
+  const rect = (x: number, y: number, w: number, h: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    const { stroke, transform: xform, effects } = collectTrailing(trailing)
+    makeShape('rect', x, y, w, h, colorArg, opacity, stroke, effects, xform)
+  }
+  const ellipse = (x: number, y: number, w: number, h: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    const { stroke, transform: xform, effects } = collectTrailing(trailing)
+    makeShape('ellipse', x, y, w, h, colorArg, opacity, stroke, effects, xform)
+  }
 
   function makePtsShape(
     type: ShapeType,
@@ -174,51 +236,51 @@ export function evaluateQuery(
     colorArg: ColorArg = '#8b5cf6',
     opacity = 0.85,
     strokeWidth?: number,
-    transformArg?: ShapeTransform,
+    xform?: ShapeTransform,
+    effects: ShapeEffect[] = [],
   ): void {
     if (shapes.length >= MAX_SHAPES) return
     const shapeColor = typeof colorArg === 'string'
       ? { hex: colorArg, opacity: Math.max(0, Math.min(1, opacity)) }
       : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
     const shape: Shape = {
-      id: crypto.randomUUID(),
-      type,
-      color: shapeColor,
-      geom: { x: 0, y: 0, w: 0, h: 0 },
-      pts,
+      id: crypto.randomUUID(), type, color: shapeColor,
+      geom: { x: 0, y: 0, w: 0, h: 0 }, pts,
       ...(strokeWidth !== undefined ? { strokeWidth } : {}),
     }
-    if (transformArg) shape.transform = transformArg
+    if (xform)          shape.transform = xform
+    if (effects.length) shape.effects   = effects
     shapes.push(shape)
   }
 
-  const line  = (x1: number, y1: number, x2: number, y2: number, colorArg?: ColorArg, opacity?: number, swOrTransform?: number | ShapeTransform, transformArg?: ShapeTransform) => {
-    const sw = typeof swOrTransform === 'number' ? swOrTransform : undefined
-    const t  = isTransform(swOrTransform) ? swOrTransform : transformArg
-    makePtsShape('line', [x1, y1, x2, y2], colorArg, opacity, sw, t)
+  const line = (x1: number, y1: number, x2: number, y2: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    let sw: number | undefined
+    let rest: unknown[] = trailing
+    if (trailing.length > 0 && typeof trailing[0] === 'number') { sw = trailing[0] as number; rest = trailing.slice(1) }
+    const { transform: xform, effects } = collectTrailing(rest)
+    makePtsShape('line', [x1, y1, x2, y2], colorArg, opacity, sw, xform, effects)
   }
-  const curve = (x1: number, y1: number, cx: number, cy: number, x2: number, y2: number, colorArg?: ColorArg, opacity?: number, swOrTransform?: number | ShapeTransform, transformArg?: ShapeTransform) => {
-    const sw = typeof swOrTransform === 'number' ? swOrTransform : undefined
-    const t  = isTransform(swOrTransform) ? swOrTransform : transformArg
-    makePtsShape('curve', [x1, y1, cx, cy, x2, y2], colorArg, opacity, sw, t)
+  const curve = (x1: number, y1: number, cx: number, cy: number, x2: number, y2: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    let sw: number | undefined
+    let rest: unknown[] = trailing
+    if (trailing.length > 0 && typeof trailing[0] === 'number') { sw = trailing[0] as number; rest = trailing.slice(1) }
+    const { transform: xform, effects } = collectTrailing(rest)
+    makePtsShape('curve', [x1, y1, cx, cy, x2, y2], colorArg, opacity, sw, xform, effects)
   }
 
-  const triangle = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, colorArg?: ColorArg, opacity?: number, strokeArg?: StrokeArg | ShapeTransform, strokeOpacity?: number, strokeWidth?: number, transformArg?: ShapeTransform) => {
+  const triangle = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
     if (shapes.length >= MAX_SHAPES) return
     const shapeColor = typeof colorArg === 'string' || colorArg === undefined
       ? { hex: colorArg ?? '#8b5cf6', opacity: Math.max(0, Math.min(1, opacity ?? 0.85)) }
       : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
+    const { stroke, transform: xform, effects } = collectTrailing(trailing)
     const shape: Shape = {
-      id:   crypto.randomUUID(),
-      type: 'triangle',
-      color: shapeColor,
-      geom: { x: 0, y: 0, w: 0, h: 0 },
-      pts:  [x1, y1, x2, y2, x3, y3],
+      id: crypto.randomUUID(), type: 'triangle', color: shapeColor,
+      geom: { x: 0, y: 0, w: 0, h: 0 }, pts: [x1, y1, x2, y2, x3, y3],
     }
-    const actualTransform = isTransform(strokeArg) ? strokeArg : transformArg
-    const sk = isTransform(strokeArg) ? undefined : resolveStroke(strokeArg as StrokeArg, strokeOpacity ?? 1, strokeWidth)
-    if (sk) shape.stroke = sk
-    if (actualTransform) shape.transform = actualTransform
+    if (stroke)          shape.stroke    = stroke
+    if (xform)           shape.transform = xform
+    if (effects.length)  shape.effects   = effects
     shapes.push(shape)
   }
 
@@ -254,7 +316,10 @@ export function evaluateQuery(
     const paletteNames  = palettes.map(p => paletteVarName(p.name))
     const paletteArrays = palettes.map(p => [...p.colors])
     new Function(
-      'rect', 'ellipse', 'line', 'curve', 'triangle', 'stroke', 'rotate', 'transform', 'repeat', 'grid',
+      'rect', 'ellipse', 'line', 'curve', 'triangle',
+      'stroke', 'rotate', 'transform',
+      'shadow', 'blur', 'bevel', 'noise', 'warp',
+      'repeat', 'grid',
       'grad', 'radGrad',
       'W', 'H',
       'PI', 'TAU', 'E',
@@ -263,7 +328,10 @@ export function evaluateQuery(
       ...paletteNames,
       `"use strict";\n${code}`,
     )(
-      rect, ellipse, line, curve, triangle, mkStroke, rotate, transform, repeat, grid,
+      rect, ellipse, line, curve, triangle,
+      mkStroke, rotate, transform,
+      shadow, blur, bevel, noise, warp,
+      repeat, grid,
       grad, radGrad,
       artW, artH,
       Math.PI, Math.PI * 2, Math.E,

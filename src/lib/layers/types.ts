@@ -20,6 +20,17 @@ export interface ShapeGeom {
   w: number; h: number   // extents, normalized 0–1
 }
 
+export interface ShapeEffect {
+  type: 'shadow' | 'blur' | 'bevel' | 'noise' | 'warp'
+  color?:   string   // shadow color
+  opacity?: number   // shadow/bevel opacity  0–1
+  blur?:    number   // shadow blur radius OR blur amount (px)
+  offsetX?: number   // shadow x offset (px)
+  offsetY?: number   // shadow y offset (px)
+  amount?:  number   // noise grain intensity 0–1  /  warp displacement px
+  freq?:    number   // warp wave frequency (cycles/px, e.g. 0.05)
+}
+
 export interface ShapeTransform {
   rotate?: number    // degrees, clockwise, around shape center
   scaleX?: number    // default 1
@@ -39,6 +50,7 @@ export interface Shape {
   pts?: number[]
   strokeWidth?: number   // artW-fraction; used by line and curve
   transform?: ShapeTransform
+  effects?: ShapeEffect[]
 }
 
 export interface Layer {
