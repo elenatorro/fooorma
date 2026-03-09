@@ -289,12 +289,12 @@
     left: 0;
     right: var(--panel-w, 260px);
     bottom: 36px;
-    background: #0e0e10;
+    background: var(--viewport-bg);
     overflow: hidden;
     /* subtle grid to show the void */
     background-image:
-      linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+      linear-gradient(var(--viewport-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--viewport-grid) 1px, transparent 1px);
     background-size: 40px 40px;
   }
 
@@ -304,7 +304,7 @@
     left: 50%;
     transform-origin: center center;
     background: #ffffff;
-    box-shadow: 0 8px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06);
+    box-shadow: 0 8px 40px var(--artboard-shadow), 0 0 0 1px rgba(128,128,128,.1);
     border-radius: 1px;
     will-change: transform;
     isolation: isolate;

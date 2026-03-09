@@ -88,7 +88,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: .08em;
-    color: #555560;
+    color: var(--text-5);
   }
 
   .param-control {
@@ -100,7 +100,7 @@
   input[type="range"] {
     flex: 1;
     height: 3px;
-    accent-color: #8b5cf6;
+    accent-color: var(--accent);
     cursor: pointer;
     background: transparent;
   }
@@ -108,12 +108,12 @@
   .param-val {
     font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
     font-size: 10px;
-    color: #c4c4cc;
+    color: var(--text-2);
     width: 44px;
     text-align: right;
     flex-shrink: 0;
-    background: #111114;
-    border: 1px solid #2b2b30;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
     border-radius: 3px;
     padding: 2px 4px;
     cursor: text;
@@ -125,14 +125,14 @@
   }
 
   button.param-val:hover {
-    border-color: #444450;
-    color: #e0e0e8;
+    border-color: var(--text-6);
+    color: var(--text-1);
   }
 
   input.param-val {
     -moz-appearance: textfield;
     outline: none;
-    border-color: #8b5cf6;
+    border-color: var(--accent);
   }
 
   /* hide browser spin buttons */

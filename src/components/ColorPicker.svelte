@@ -198,14 +198,14 @@
     width: 28px;
     height: 22px;
     padding: 2px;
-    background: #111114;
-    border: 1px solid #2b2b30;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
     border-radius: 4px;
     cursor: pointer;
     flex-shrink: 0;
     transition: border-color .12s;
   }
-  .cp-swatch:hover { border-color: #555; }
+  .cp-swatch:hover { border-color: var(--text-5); }
 
   .cp-swatch-inner {
     display: block;
@@ -226,10 +226,10 @@
     position: fixed;
     z-index: 999;
     width: 212px;
-    background: #1a1a1e;
-    border: 1px solid #2b2b30;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 12px 40px rgba(0,0,0,.7);
+    box-shadow: 0 12px 40px rgba(0,0,0,.4);
     overflow: hidden;
     user-select: none;
   }
@@ -304,9 +304,9 @@
     height: 10px;
     border-radius: 5px;
     background:
-      linear-gradient(45deg, #3a3a3a 25%, transparent 25%, transparent 75%, #3a3a3a 75%) 0 0 / 8px 8px,
-      linear-gradient(45deg, #3a3a3a 25%, transparent 25%, transparent 75%, #3a3a3a 75%) 4px 4px / 8px 8px,
-      #1a1a1e;
+      linear-gradient(45deg, var(--checker-a) 25%, transparent 25%, transparent 75%, var(--checker-a) 75%) 0 0 / 8px 8px,
+      linear-gradient(45deg, var(--checker-a) 25%, transparent 25%, transparent 75%, var(--checker-a) 75%) 4px 4px / 8px 8px,
+      var(--checker-b);
   }
   .cp-op-wrap::before {
     content: '';
@@ -353,32 +353,32 @@
     align-items: center;
     gap: 8px;
     padding: 8px 12px 10px;
-    border-top: 1px solid #222228;
+    border-top: 1px solid var(--border-inner);
   }
 
   .cp-hex-wrap {
     display: flex;
     align-items: center;
-    background: #111114;
-    border: 1px solid #2b2b30;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 3px 6px;
     flex: 1;
     gap: 2px;
     transition: border-color .12s;
   }
-  .cp-hex-wrap:focus-within { border-color: #8b5cf6; }
+  .cp-hex-wrap:focus-within { border-color: var(--accent); }
 
   .cp-hash {
     font-family: monospace;
     font-size: 11px;
-    color: #444450;
+    color: var(--text-6);
   }
 
   .cp-hex-input {
     background: none;
     border: none;
-    color: #c8c8d0;
+    color: var(--text-2);
     font-family: monospace;
     font-size: 11px;
     width: 58px;
@@ -389,7 +389,7 @@
   .cp-alpha-val {
     font-family: monospace;
     font-size: 10px;
-    color: #555560;
+    color: var(--text-5);
     width: 30px;
     text-align: right;
     flex-shrink: 0;
@@ -399,7 +399,7 @@
     width: 20px;
     height: 20px;
     border-radius: 3px;
-    border: 1px solid rgba(255,255,255,.08);
+    border: 1px solid var(--border);
     flex-shrink: 0;
   }
 </style>

@@ -29,8 +29,8 @@
     position: fixed;
     bottom: 0; left: 0; right: var(--panel-w, 260px);
     height: 36px;
-    background: #17171a;
-    border-top: 1px solid #2b2b30;
+    background: var(--bg-bar);
+    border-top: 1px solid var(--border);
     display: flex;
     align-items: center;
     padding: 0 14px;
@@ -47,8 +47,8 @@
 
   .zoom-controls button {
     background: none;
-    border: 1px solid #2b2b30;
-    color: #c4c4cc;
+    border: 1px solid var(--border);
+    color: var(--text-2);
     font-size: 13px;
     width: 26px;
     height: 22px;
@@ -60,7 +60,7 @@
     padding: 0;
     line-height: 1;
   }
-  .zoom-controls button:hover { border-color: #444; color: #e2e2e6; }
+  .zoom-controls button:hover { border-color: var(--text-6); color: var(--text-1); }
 
   .text-btn {
     width: auto !important;
@@ -71,7 +71,7 @@
   .zoom-val {
     font-family: monospace;
     font-size: 11px;
-    color: #888890;
+    color: var(--text-3);
     width: 38px;
     text-align: center;
   }

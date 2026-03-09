@@ -12,6 +12,18 @@
   import { BUILTIN_PALETTES } from './lib/palettes/index'
   import type { Palette } from './lib/palettes/index'
 
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  const THEME_KEY = 'forma_theme'
+  let theme = $state<'dark' | 'light'>((localStorage.getItem(THEME_KEY) as 'dark' | 'light') ?? 'dark')
+
+  $effect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    document.documentElement.style.colorScheme = theme
+    localStorage.setItem(THEME_KEY, theme)
+  })
+
+  function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark' }
+
   // ── Autosave / restore ─────────────────────────────────────────────────────
   const STORAGE_KEY = 'forma_autosave'
 
@@ -493,11 +505,13 @@
 <TopBar
   {artW}
   {artH}
+  {theme}
   onSizeChange={handleSizeChange}
   onExport={handleExport}
   onNew={handleNew}
   onSave={handleSave}
   onLoad={handleLoad}
+  onToggleTheme={toggleTheme}
 />
 
 <Viewport
@@ -572,16 +586,115 @@
 ></div>
 
 <style>
+  /* ── CSS custom properties ─────────────────────────────────────────────── */
+  :global(:root) {
+    --bg-bar:        #17171a;
+    --bg-panel:      #111114;
+    --bg-elevated:   #1a1a1e;
+    --bg-sunken:     #0e0e10;
+    --bg-hover:      #1f1f24;
+    --bg-selected:   #1a1428;
+    --bg-error:      #110808;
+    --border:        #2b2b30;
+    --border-inner:  #1e1e22;
+    --border-add:    #333340;
+    --border-error:  #1a0c0c;
+    --text-1:        #e2e2e6;
+    --text-2:        #c8c8d0;
+    --text-3:        #888890;
+    --text-4:        #666672;
+    --text-5:        #555560;
+    --text-6:        #444450;
+    --text-7:        #333340;
+    --text-ok:       #4ade80;
+    --text-err:      #f87171;
+    --accent:        #8b5cf6;
+    --accent-text:   #c4b0f8;
+    --viewport-bg:   #0e0e10;
+    --viewport-grid: rgba(255,255,255,.03);
+    --artboard-shadow: rgba(0,0,0,.7);
+    --checker-a:     #3a3a3a;
+    --checker-b:     #1a1a1e;
+    --cm-bg:         #0d0d0f;
+    --cm-text:       #c8c8d0;
+    --cm-comment:    #444454;
+    --cm-string:     #86c99a;
+    --cm-number:     #d19a66;
+    --cm-keyword:    #c4b0f8;
+    --cm-operator:   #88889a;
+    --cm-function:   #93c5fd;
+    --cm-property:   #e5c07b;
+    --cm-cursor:     #c4b0f8;
+    --cm-selection:  #2d2540;
+    --cm-active-line: rgba(139,92,246,0.05);
+    --cm-placeholder: #2a2a36;
+    --cm-tooltip-bg:  #18181c;
+    --cm-tooltip-border: #2d2d38;
+    --cm-item-selected:  #2a1f3d;
+    --cm-item-text:      #c4b0f8;
+    --cm-matched:        #8b5cf6;
+    --cm-focus-shadow:   #8b5cf6;
+  }
+
+  :global([data-theme="light"]) {
+    --bg-bar:        #f2f2f5;
+    --bg-panel:      #f5f5f8;
+    --bg-elevated:   #ffffff;
+    --bg-sunken:     #ebebef;
+    --bg-hover:      #eeeef2;
+    --bg-selected:   #ede9fe;
+    --bg-error:      #fff5f5;
+    --border:        #d8d8e2;
+    --border-inner:  #e4e4ec;
+    --border-add:    #c0c0cc;
+    --border-error:  #fecaca;
+    --text-1:        #111118;
+    --text-2:        #2a2a34;
+    --text-3:        #6b6b7a;
+    --text-4:        #7a7a8a;
+    --text-5:        #8888a0;
+    --text-6:        #9898b0;
+    --text-7:        #aaaabb;
+    --text-ok:       #16a34a;
+    --text-err:      #ef4444;
+    --accent:        #7c3aed;
+    --accent-text:   #7c3aed;
+    --viewport-bg:   #e0e0e8;
+    --viewport-grid: rgba(0,0,0,.05);
+    --artboard-shadow: rgba(0,0,0,.15);
+    --checker-a:     #cccccc;
+    --checker-b:     #eeeeee;
+    --cm-bg:         #f8f8fc;
+    --cm-text:       #1a1a28;
+    --cm-comment:    #9898aa;
+    --cm-string:     #15803d;
+    --cm-number:     #b45309;
+    --cm-keyword:    #7c3aed;
+    --cm-operator:   #6b7080;
+    --cm-function:   #1d4ed8;
+    --cm-property:   #92400e;
+    --cm-cursor:     #7c3aed;
+    --cm-selection:  #ddd6fe;
+    --cm-active-line: rgba(124,58,237,0.04);
+    --cm-placeholder: #c0c0cc;
+    --cm-tooltip-bg:  #ffffff;
+    --cm-tooltip-border: #d8d8e2;
+    --cm-item-selected:  #ede9fe;
+    --cm-item-text:      #7c3aed;
+    --cm-matched:        #7c3aed;
+    --cm-focus-shadow:   #7c3aed;
+  }
+
   :global(*, *::before, *::after) { box-sizing: border-box; margin: 0; padding: 0; }
   :global(html, body) {
     width: 100%; height: 100%; overflow: hidden;
-    background: #0e0e10;
-    color: #e2e2e6;
+    background: var(--viewport-bg);
+    color: var(--text-2);
     font-family: system-ui, -apple-system, sans-serif;
   }
   :global(::-webkit-scrollbar) { width: 6px; }
   :global(::-webkit-scrollbar-track) { background: transparent; }
-  :global(::-webkit-scrollbar-thumb) { background: #2b2b30; border-radius: 3px; }
+  :global(::-webkit-scrollbar-thumb) { background: var(--border); border-radius: 3px; }
 
   .panel-resize-handle {
     position: fixed;
@@ -593,6 +706,6 @@
     background: transparent;
     transition: background .15s;
   }
-  .panel-resize-handle:hover { background: rgba(139, 92, 246, 0.2); }
-  .panel-resize-handle:active { background: rgba(139, 92, 246, 0.35); }
+  .panel-resize-handle:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+  .panel-resize-handle:active { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 </style>

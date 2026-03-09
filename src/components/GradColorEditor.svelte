@@ -157,18 +157,18 @@
     flex: 1;
     padding: 3px 0;
     font-size: 10px;
-    background: #111114;
-    border: 1px solid #2b2b30;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
     border-radius: 4px;
-    color: #888;
+    color: var(--text-3);
     cursor: pointer;
     transition: background .1s, color .1s, border-color .1s;
   }
-  .gce-type-btn:hover { border-color: #555; color: #bbb; }
+  .gce-type-btn:hover { border-color: var(--text-5); color: var(--text-2); }
   .gce-type-btn.active {
-    background: #1e1333;
-    border-color: #8b5cf6;
-    color: #c4b5fd;
+    background: var(--bg-selected);
+    border-color: var(--accent);
+    color: var(--accent-text);
   }
 
   .gce-solid-row {
@@ -180,7 +180,7 @@
   .gce-preview {
     height: 22px;
     border-radius: 4px;
-    border: 1px solid #2b2b30;
+    border: 1px solid var(--border);
     margin-bottom: 8px;
   }
 
@@ -193,7 +193,7 @@
 
   .gce-label {
     font-size: 10px;
-    color: #777;
+    color: var(--text-4);
     width: 36px;
     flex-shrink: 0;
   }
@@ -204,7 +204,7 @@
     appearance: none;
     height: 4px;
     border-radius: 2px;
-    background: #2b2b30;
+    background: var(--border);
     outline: none;
     cursor: pointer;
   }
@@ -212,14 +212,14 @@
     -webkit-appearance: none;
     width: 12px; height: 12px;
     border-radius: 50%;
-    background: #8b5cf6;
+    background: var(--accent);
     border: none;
     cursor: pointer;
   }
   .gce-range::-moz-range-thumb {
     width: 12px; height: 12px;
     border-radius: 50%;
-    background: #8b5cf6;
+    background: var(--accent);
     border: none;
     cursor: pointer;
   }
@@ -227,7 +227,7 @@
   .gce-val {
     font-family: monospace;
     font-size: 10px;
-    color: #666;
+    color: var(--text-4);
     width: 32px;
     text-align: right;
     flex-shrink: 0;
@@ -236,7 +236,7 @@
   .gce-hex {
     font-family: monospace;
     font-size: 10px;
-    color: #999;
+    color: var(--text-3);
     flex: 1;
   }
 
@@ -260,9 +260,9 @@
     height: 18px;
     padding: 0;
     background: none;
-    border: 1px solid #2b2b30;
+    border: 1px solid var(--border);
     border-radius: 3px;
-    color: #666;
+    color: var(--text-4);
     cursor: pointer;
     font-size: 13px;
     line-height: 1;
@@ -278,12 +278,12 @@
     width: 100%;
     padding: 4px;
     font-size: 10px;
-    background: #111114;
-    border: 1px dashed #2b2b30;
+    background: var(--bg-panel);
+    border: 1px dashed var(--border);
     border-radius: 4px;
-    color: #666;
+    color: var(--text-4);
     cursor: pointer;
     transition: border-color .1s, color .1s;
   }
-  .gce-add-btn:hover { border-color: #8b5cf6; color: #8b5cf6; }
+  .gce-add-btn:hover { border-color: var(--accent); color: var(--accent); }
 </style>

@@ -4,19 +4,23 @@
   const {
     artW,
     artH,
+    theme,
     onSizeChange,
     onExport,
     onSave,
     onLoad,
     onNew,
+    onToggleTheme,
   }: {
     artW: number
     artH: number
+    theme: 'dark' | 'light'
     onSizeChange: (w: number, h: number) => void
     onExport: () => void
     onSave: () => void
     onLoad: (file: File) => void
     onNew: () => void
+    onToggleTheme: () => void
   } = $props()
 
   // ── File open ──────────────────────────────────────────────────────────────
@@ -143,6 +147,7 @@
     <button class="file-btn" onclick={onNew} title="New blank canvas">New</button>
     <button class="file-btn" onclick={openFilePicker} title="Open .forma file">Open</button>
     <button class="file-btn" onclick={onSave} title="Save project as .forma">Save</button>
+    <button class="file-btn theme-btn" onclick={onToggleTheme} title="Toggle light/dark theme">{theme === 'dark' ? '◑' : '◐'}</button>
   </div>
 
   <button class="export-btn" onclick={onExport}>Export PNG</button>
@@ -169,8 +174,8 @@
     position: fixed;
     top: 0; left: 0; right: 0;
     height: 44px;
-    background: #17171a;
-    border-bottom: 1px solid #2b2b30;
+    background: var(--bg-bar);
+    border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
     padding: 0 14px;
@@ -183,7 +188,7 @@
     font-family: monospace;
     font-size: 14px;
     font-weight: 600;
-    color: #8b5cf6;
+    color: var(--accent);
     letter-spacing: .08em;
     flex-shrink: 0;
   }
@@ -200,19 +205,19 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    background: #111114;
-    border: 1px solid #2b2b30;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
     border-radius: 5px;
     padding: 0 6px;
     height: 28px;
     transition: border-color .12s;
   }
-  .dim-pair:focus-within { border-color: #8b5cf6; }
+  .dim-pair:focus-within { border-color: var(--accent); }
 
   .dim-label {
     font-size: 10px;
     font-weight: 600;
-    color: #444450;
+    color: var(--text-6);
     text-transform: uppercase;
     letter-spacing: .05em;
     flex-shrink: 0;
@@ -222,7 +227,7 @@
     width: 44px;
     background: none;
     border: none;
-    color: #c8c8d0;
+    color: var(--text-2);
     font-size: 12px;
     font-family: monospace;
     text-align: right;
@@ -235,13 +240,13 @@
 
   .dim-sep {
     font-size: 12px;
-    color: #333340;
+    color: var(--text-7);
   }
 
   .swap-btn {
     background: none;
-    border: 1px solid #2b2b30;
-    color: #444450;
+    border: 1px solid var(--border);
+    color: var(--text-6);
     font-size: 14px;
     width: 26px;
     height: 28px;
@@ -252,7 +257,7 @@
     justify-content: center;
     transition: border-color .12s, color .12s;
   }
-  .swap-btn:hover { border-color: #555; color: #aaa; }
+  .swap-btn:hover { border-color: var(--text-5); color: var(--text-3); }
 
   /* ── Presets ── */
   .preset-wrap {
@@ -261,8 +266,8 @@
 
   .preset-toggle {
     background: none;
-    border: 1px solid #2b2b30;
-    color: #444450;
+    border: 1px solid var(--border);
+    color: var(--text-6);
     font-size: 10px;
     width: 22px;
     height: 28px;
@@ -273,27 +278,27 @@
     justify-content: center;
     transition: border-color .12s, color .12s;
   }
-  .preset-toggle:hover { border-color: #555; color: #aaa; }
-  .preset-toggle.active { border-color: #8b5cf6; color: #c4b0f8; }
+  .preset-toggle:hover { border-color: var(--text-5); color: var(--text-3); }
+  .preset-toggle.active { border-color: var(--accent); color: var(--accent-text); }
 
   .preset-dropdown {
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
-    background: #1e1e22;
-    border: 1px solid #2b2b30;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 6px;
     overflow: hidden;
     z-index: 200;
     min-width: 180px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    box-shadow: 0 8px 24px rgba(0,0,0,.3);
   }
 
   .preset-item {
     width: 100%;
     background: none;
     border: none;
-    color: #c4c4cc;
+    color: var(--text-2);
     font-size: 12px;
     padding: 8px 12px;
     cursor: pointer;
@@ -304,8 +309,8 @@
     gap: 12px;
     transition: background .1s;
   }
-  .preset-item:hover { background: #2a2a30; color: #e2e2e6; }
-  .preset-item.active { color: #8b5cf6; }
+  .preset-item:hover { background: var(--bg-hover); color: var(--text-1); }
+  .preset-item.active { color: var(--accent); }
 
   .preset-dim {
     font-family: monospace;
@@ -322,20 +327,22 @@
 
   .file-btn {
     background: none;
-    border: 1px solid #2b2b30;
-    color: #888890;
+    border: 1px solid var(--border);
+    color: var(--text-3);
     font-size: 12px;
     padding: 5px 10px;
     border-radius: 5px;
     cursor: pointer;
     transition: border-color .15s, color .15s;
   }
-  .file-btn:hover { border-color: #555; color: #c8c8d0; }
+  .file-btn:hover { border-color: var(--text-5); color: var(--text-2); }
+
+  .theme-btn { font-size: 14px; padding: 5px 8px; }
 
   .export-btn {
     background: none;
-    border: 1px solid #2b2b30;
-    color: #c4c4cc;
+    border: 1px solid var(--border);
+    color: var(--text-2);
     font-size: 12px;
     padding: 5px 12px;
     border-radius: 5px;
@@ -343,7 +350,7 @@
     flex-shrink: 0;
     transition: border-color .15s, color .15s;
   }
-  .export-btn:hover { border-color: #8b5cf6; color: #8b5cf6; }
+  .export-btn:hover { border-color: var(--accent); color: var(--accent); }
 
   .overlay {
     position: fixed;

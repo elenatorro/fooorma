@@ -33,30 +33,30 @@
   // ── Theme ─────────────────────────────────────────────────────────────────
   const formaTheme = EditorView.theme({
     '&': {
-      background: '#0d0d0f',
-      color: '#c8c8d0',
+      background: 'var(--cm-bg)',
+      color: 'var(--cm-text)',
       fontFamily: "'Menlo', 'Consolas', 'Monaco', monospace",
       fontSize: '11px',
     },
     '.cm-content': {
-      caretColor: '#c4b0f8',
+      caretColor: 'var(--cm-cursor)',
       padding: '10px 0',
       lineHeight: '1.65',
     },
     '.cm-line': { padding: '0 12px' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#c4b0f8' },
-    '&.cm-focused': { outline: 'none', boxShadow: 'inset 2px 0 0 #8b5cf6' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--cm-cursor)' },
+    '&.cm-focused': { outline: 'none', boxShadow: 'inset 2px 0 0 var(--cm-focus-shadow)' },
     '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-      background: '#2d2540 !important',
+      background: 'var(--cm-selection) !important',
     },
-    '.cm-activeLine': { background: 'rgba(139, 92, 246, 0.05)' },
-    '.cm-placeholder': { color: '#2a2a36' },
+    '.cm-activeLine': { background: 'var(--cm-active-line)' },
+    '.cm-placeholder': { color: 'var(--cm-placeholder)' },
     // Autocomplete popup
     '.cm-tooltip': {
-      background: '#18181c',
-      border: '1px solid #2d2d38',
+      background: 'var(--cm-tooltip-bg)',
+      border: '1px solid var(--cm-tooltip-border)',
       borderRadius: '6px',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
       overflow: 'hidden',
     },
     '.cm-tooltip-autocomplete > ul': {
@@ -66,20 +66,20 @@
     },
     '.cm-tooltip-autocomplete > ul > li': {
       padding: '3px 10px',
-      color: '#c8c8d0',
+      color: 'var(--cm-text)',
     },
     '.cm-tooltip-autocomplete > ul > li[aria-selected]': {
-      background: '#2a1f3d',
-      color: '#c4b0f8',
+      background: 'var(--cm-item-selected)',
+      color: 'var(--cm-item-text)',
     },
     '.cm-completionDetail': {
       marginLeft: '6px',
-      color: '#444454',
+      color: 'var(--cm-placeholder)',
       fontStyle: 'normal',
       fontSize: '10px',
     },
     '.cm-completionMatchedText': {
-      color: '#8b5cf6',
+      color: 'var(--cm-matched)',
       textDecoration: 'none',
       fontWeight: 'bold',
     },
@@ -87,16 +87,16 @@
 
   // ── Syntax highlighting ───────────────────────────────────────────────────
   const formaHighlight = HighlightStyle.define([
-    { tag: tags.comment,                      color: '#444454', fontStyle: 'italic' },
-    { tag: tags.string,                       color: '#86c99a' },
-    { tag: tags.number,                       color: '#d19a66' },
-    { tag: [tags.bool, tags.null],            color: '#c4b0f8' },
-    { tag: tags.keyword,                      color: '#c4b0f8' },
-    { tag: tags.operator,                     color: '#88889a' },
-    { tag: tags.punctuation,                  color: '#88889a' },
-    { tag: tags.function(tags.variableName),  color: '#93c5fd' },
-    { tag: tags.propertyName,                 color: '#e5c07b' },
-    { tag: tags.variableName,                 color: '#c8c8d0' },
+    { tag: tags.comment,                      color: 'var(--cm-comment)', fontStyle: 'italic' },
+    { tag: tags.string,                       color: 'var(--cm-string)' },
+    { tag: tags.number,                       color: 'var(--cm-number)' },
+    { tag: [tags.bool, tags.null],            color: 'var(--cm-keyword)' },
+    { tag: tags.keyword,                      color: 'var(--cm-keyword)' },
+    { tag: tags.operator,                     color: 'var(--cm-operator)' },
+    { tag: tags.punctuation,                  color: 'var(--cm-operator)' },
+    { tag: tags.function(tags.variableName),  color: 'var(--cm-function)' },
+    { tag: tags.propertyName,                 color: 'var(--cm-property)' },
+    { tag: tags.variableName,                 color: 'var(--cm-text)' },
   ])
 
   // ── Completions ───────────────────────────────────────────────────────────
@@ -282,7 +282,7 @@
 
 <style>
   .cm-wrap {
-    border-bottom: 1px solid #1e1e22;
+    border-bottom: 1px solid var(--border-inner);
     overflow: hidden;
     box-sizing: border-box;
     transition: min-height .2s ease;
