@@ -440,7 +440,7 @@ export function clientToNorm(
   artW: number,
   artH: number,
 ): { nx: number; ny: number } {
-  const nx = Math.max(0, Math.min(1, (clientX - artboardRect.left) / artboardRect.width))
-  const ny = Math.max(0, Math.min(1, (clientY - artboardRect.top)  / artboardRect.height))
+  const nx = (clientX - artboardRect.left) / artboardRect.width
+  const ny = (clientY - artboardRect.top)  / artboardRect.height
   return { nx, ny }
 }

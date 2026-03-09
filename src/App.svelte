@@ -84,10 +84,9 @@
     localStorage.setItem('forma_panel_w', String(panelWidth))
   })
 
-  const activeLayerMode = $derived(layers.find(l => l.id === activeLayerId)?.mode ?? 'manual')
-
   $effect(() => {
-    const h = codePanelPos === 'bottom' && activeLayerMode === 'code' ? codePanelH : 0
+    const mode = layers.find(l => l.id === activeLayerId)?.mode ?? 'manual'
+    const h = codePanelPos === 'bottom' && mode === 'code' ? codePanelH : 0
     document.documentElement.style.setProperty('--code-panel-h', `${h}px`)
     localStorage.setItem('forma_code_pos', codePanelPos)
     localStorage.setItem('forma_code_h', String(codePanelH))
@@ -567,6 +566,61 @@
     a.click()
   }
 
+  // ── Clipboard / duplicate ──────────────────────────────────────────────────
+  let _clipboard = $state<Shape[]>([])
+
+  function selectedShapes(): Shape[] {
+    const layer = layers.find(l => l.id === activeLayerId)
+    if (!layer) return []
+    return layer.shapes.filter(s => selectedShapeIds.includes(s.id))
+  }
+
+  const PASTE_OFFSET = 0.02  // normalized units
+
+  function handleDuplicateSelected() {
+    if (selectedShapeIds.length === 0) return
+    const layer = layers.find(l => l.id === activeLayerId)
+    if (!layer) return
+    commit()
+    const originals = layer.shapes.filter(s => selectedShapeIds.includes(s.id))
+    const copies = originals.map(s => ({
+      ...JSON.parse(JSON.stringify(s)) as Shape,
+      id: crypto.randomUUID(),
+      geom: { ...s.geom, x: s.geom.x + PASTE_OFFSET, y: s.geom.y + PASTE_OFFSET },
+      pts: s.pts?.map((v, i) => v + PASTE_OFFSET),
+    }))
+    layers = layers.map(l => l.id === activeLayerId ? { ...l, shapes: [...l.shapes, ...copies] } : l)
+    selectedShapeIds = copies.map(c => c.id)
+    activeShapeId = copies[copies.length - 1].id
+  }
+
+  function handleCopySelected() {
+    if (selectedShapeIds.length === 0) return
+    _clipboard = JSON.parse(JSON.stringify(selectedShapes())) as Shape[]
+  }
+
+  function handleCutSelected() {
+    if (selectedShapeIds.length === 0) return
+    handleCopySelected()
+    handleDeleteSelected()
+  }
+
+  function handlePaste() {
+    if (_clipboard.length === 0) return
+    const layer = layers.find(l => l.id === activeLayerId)
+    if (!layer) return
+    commit()
+    const copies = _clipboard.map(s => ({
+      ...JSON.parse(JSON.stringify(s)) as Shape,
+      id: crypto.randomUUID(),
+      geom: { ...s.geom, x: s.geom.x + PASTE_OFFSET, y: s.geom.y + PASTE_OFFSET },
+      pts: s.pts?.map((v, i) => v + PASTE_OFFSET),
+    }))
+    layers = layers.map(l => l.id === activeLayerId ? { ...l, shapes: [...l.shapes, ...copies] } : l)
+    selectedShapeIds = copies.map(c => c.id)
+    activeShapeId = copies[copies.length - 1].id
+  }
+
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   function handleKeyDown(e: KeyboardEvent) {
     const el = e.target as HTMLElement
@@ -579,11 +633,20 @@
     if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
     if (mod && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) { e.preventDefault(); redo(); return }
 
-    // Cut (delete selected shapes)
+    // Duplicate
+    if (mod && e.key === 'd' && selectedShapeIds.length > 0) {
+      e.preventDefault(); handleDuplicateSelected(); return
+    }
+
+    // Copy / cut / paste
+    if (mod && e.key === 'c' && selectedShapeIds.length > 0) {
+      e.preventDefault(); handleCopySelected(); return
+    }
     if (mod && e.key === 'x' && selectedShapeIds.length > 0) {
-      e.preventDefault()
-      handleDeleteSelected()
-      return
+      e.preventDefault(); handleCutSelected(); return
+    }
+    if (mod && e.key === 'v') {
+      e.preventDefault(); handlePaste(); return
     }
 
     if (e.key === 'Escape') { activeShapeId = null }

@@ -137,6 +137,17 @@
   })
 
   $effect(() => {
+    if (!activeShapeId) return
+    const idx = listShapes.findIndex(s => s.id === activeShapeId)
+    if (idx === -1) return
+    if (idx >= visibleEnd) visibleEnd = idx + 1
+    // Wait for DOM to render the row
+    setTimeout(() => {
+      document.getElementById(`shape-row-${activeShapeId}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }, 0)
+  })
+
+  $effect(() => {
     if (!sentinelEl || !shapeListEl) return
     const io = new IntersectionObserver(
       (entries) => { if (entries[0]?.isIntersecting) visibleEnd = Math.min(visibleEnd + 50, listShapes.length) },
@@ -724,6 +735,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
+              id="shape-row-{shape.id}"
               class="shape-row"
               class:selected={!isCodeMode && selectedShapeIds.includes(shape.id)}
               onclick={() => { if (!isCodeMode) onSelectShape(shape.id) }}
@@ -792,11 +804,11 @@
               <input
                 type="checkbox"
                 checked={!!activeShape.stroke}
-                onchange={(e) => onUpdateShape(activeLayer.id, activeShape.id, {
+                onchange={(e) => forAll(s => ({
                   stroke: (e.target as HTMLInputElement).checked
-                    ? { hex: '#000000', opacity: 1, width: 0.005 }
+                    ? (s.stroke ?? { hex: '#000000', opacity: 1, width: 0.005 })
                     : undefined
-                })}
+                }))}
               />
             </div>
           </div>

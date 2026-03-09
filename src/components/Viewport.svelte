@@ -210,10 +210,9 @@
     }
 
     if (moveDrag && activeLayerId) {
-      const origH_ny = moveDrag.origH * artW / artH
       onUpdateGeom(activeLayerId, moveDrag.shapeId, {
-        x: clamp(nx - moveDrag.offsetNx, moveDrag.origW / 2, 1 - moveDrag.origW / 2),
-        y: clamp(ny - moveDrag.offsetNy, origH_ny / 2, 1 - origH_ny / 2),
+        x: nx - moveDrag.offsetNx,
+        y: ny - moveDrag.offsetNy,
         w: moveDrag.origW,
         h: moveDrag.origH,
       })
