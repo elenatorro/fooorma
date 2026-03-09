@@ -1,13 +1,17 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
   import type { Layer, Shape, ShapeGeom } from './lib/layers/types'
-  import { renderLayers2D }    from './lib/layers/renderer2d'
+  import { renderLayers2D, applyTransform } from './lib/layers/renderer2d'
   import { evaluateQuery, shapesToCode } from './lib/query/index'
 
-  import TopBar     from './components/TopBar.svelte'
-  import RightPanel from './components/RightPanel.svelte'
-  import StatusBar  from './components/StatusBar.svelte'
-  import Viewport   from './components/Viewport.svelte'
+  import { initEditorFont } from './lib/editor-font'
+  initEditorFont()
+
+  import TopBar          from './components/TopBar.svelte'
+  import RightPanel      from './components/RightPanel.svelte'
+  import BottomCodePanel from './components/BottomCodePanel.svelte'
+  import StatusBar       from './components/StatusBar.svelte'
+  import Viewport        from './components/Viewport.svelte'
   import { serializeProject, parseProject } from './lib/persist/index'
   import { BUILTIN_PALETTES } from './lib/palettes/index'
   import type { Palette } from './lib/palettes/index'
@@ -51,9 +55,13 @@
   let panX = $state(0)
   let panY = $state(0)
 
-  // ── Panel width (resizable) ─────────────────────────────────────────────────
-  let panelWidth = $state(260)
+  // ── Panel width (resizable + presets) ──────────────────────────────────────
+  let panelWidth = $state(parseInt(localStorage.getItem('forma_panel_w') ?? '260') || 260)
   let resizeOrigin: { x: number; w: number } | null = null
+
+  // ── Code panel position ─────────────────────────────────────────────────────
+  let codePanelPos = $state<'right' | 'bottom'>((localStorage.getItem('forma_code_pos') as 'right' | 'bottom') ?? 'right')
+  let codePanelH   = $state(parseInt(localStorage.getItem('forma_code_h') ?? '280') || 280)
 
   function startResize(e: PointerEvent) {
     resizeOrigin = { x: e.clientX, w: panelWidth }
@@ -73,6 +81,16 @@
 
   $effect(() => {
     document.documentElement.style.setProperty('--panel-w', `${panelWidth}px`)
+    localStorage.setItem('forma_panel_w', String(panelWidth))
+  })
+
+  const activeLayerMode = $derived(layers.find(l => l.id === activeLayerId)?.mode ?? 'manual')
+
+  $effect(() => {
+    const h = codePanelPos === 'bottom' && activeLayerMode === 'code' ? codePanelH : 0
+    document.documentElement.style.setProperty('--code-panel-h', `${h}px`)
+    localStorage.setItem('forma_code_pos', codePanelPos)
+    localStorage.setItem('forma_code_h', String(codePanelH))
   })
 
   // Computed viewport size (minus bars)
@@ -112,9 +130,8 @@
     future = [snapshot(), ...future.slice(0, MAX_HISTORY - 1)]
     layers = past[past.length - 1]
     past   = past.slice(0, -1)
-    // keep activeShapeId valid
-    const activeLayer = layers.find(l => l.id === activeLayerId)
-    if (activeShapeId && !activeLayer?.shapes.some(s => s.id === activeShapeId)) activeShapeId = null
+    activeShapeId = null
+    selectedShapeIds = []
   }
 
   function redo() {
@@ -122,8 +139,8 @@
     past   = [...past.slice(-(MAX_HISTORY - 1)), snapshot()]
     layers = future[0]
     future = future.slice(1)
-    const activeLayer = layers.find(l => l.id === activeLayerId)
-    if (activeShapeId && !activeLayer?.shapes.some(s => s.id === activeShapeId)) activeShapeId = null
+    activeShapeId = null
+    selectedShapeIds = []
   }
 
   // ── Layers ─────────────────────────────────────────────────────────────────
@@ -134,7 +151,8 @@
     : _initId
   let activeLayerId = $state<string | null>(_initActiveId)
   let activeShapeId = $state<string | null>(null)
-  let activeTab = $state<'layers' | 'effects' | 'palettes'>('layers')
+  let selectedShapeIds = $state<string[]>([])
+  let activeTab = $state<'layers' | 'effects' | 'palettes' | 'samples'>('layers')
 
   // ── Palettes ───────────────────────────────────────────────────────────────
   let customPalettes = $state<Palette[]>(_saved?.customPalettes ?? [])
@@ -181,16 +199,17 @@
   function handleSelectLayer(id: string) {
     activeLayerId = id
     activeShapeId = null
+    selectedShapeIds = []
   }
 
   function handleDeleteLayer(id: string) {
     commit()
-    const layer = layers.find(l => l.id === id)
-    if (layer && activeShapeId !== null && layer.shapes.some(s => s.id === activeShapeId)) {
-      activeShapeId = null
-    }
     layers = layers.filter(l => l.id !== id)
-    if (activeLayerId === id) activeLayerId = layers[layers.length - 1]?.id ?? null
+    if (activeLayerId === id) {
+      activeLayerId = layers[layers.length - 1]?.id ?? null
+      activeShapeId = null
+      selectedShapeIds = []
+    }
   }
 
   function handleToggleVisible(id: string) {
@@ -240,6 +259,7 @@
       }
     })
     activeShapeId = null
+    selectedShapeIds = []
   }
 
   // Commit once per drag (tracked by shape id to avoid committing on every mousemove)
@@ -280,6 +300,37 @@
 
   function handleSelectShape(shapeId: string) {
     activeShapeId = shapeId
+    selectedShapeIds = [shapeId]
+  }
+
+  function handleToggleShape(shapeId: string) {
+    if (selectedShapeIds.includes(shapeId)) {
+      selectedShapeIds = selectedShapeIds.filter(id => id !== shapeId)
+      if (activeShapeId === shapeId) {
+        activeShapeId = selectedShapeIds[selectedShapeIds.length - 1] ?? null
+      }
+    } else {
+      selectedShapeIds = [...selectedShapeIds, shapeId]
+      activeShapeId = shapeId
+    }
+  }
+
+  function handleMoveBatch(
+    layerId: string,
+    moves: Array<{ shapeId: string; geom?: ShapeGeom; pts?: number[] }>,
+  ) {
+    const key = `batch:${layerId}:${selectedShapeIds.join(',')}`
+    if (key !== _lastGeomCommitKey) { commit(); _lastGeomCommitKey = key }
+    layers = layers.map(l => l.id === layerId ? {
+      ...l,
+      shapes: l.shapes.map(s => {
+        const upd = moves.find(u => u.shapeId === s.id)
+        if (!upd) return s
+        if (upd.pts !== undefined) return { ...s, pts: upd.pts }
+        if (upd.geom !== undefined) return { ...s, geom: upd.geom }
+        return s
+      }),
+    } : l)
   }
 
   function handleDeleteShape(layerId: string, shapeId: string) {
@@ -289,6 +340,20 @@
       shapes: l.shapes.filter(s => s.id !== shapeId),
     } : l)
     if (activeShapeId === shapeId) activeShapeId = null
+    selectedShapeIds = selectedShapeIds.filter(id => id !== shapeId)
+  }
+
+  function handleDeleteSelected() {
+    const layer = layers.find(l => l.id === activeLayerId)
+    if (!layer || selectedShapeIds.length === 0) return
+    commit()
+    const toDelete = new Set(selectedShapeIds)
+    layers = layers.map(l => l.id === layer.id ? {
+      ...l,
+      shapes: l.shapes.filter(s => !toDelete.has(s.id)),
+    } : l)
+    activeShapeId = null
+    selectedShapeIds = []
   }
 
   function handleUpdateShape(layerId: string, shapeId: string, update: Partial<Shape>) {
@@ -296,6 +361,19 @@
     layers = layers.map(l => l.id === layerId ? {
       ...l,
       shapes: l.shapes.map(s => s.id === shapeId ? { ...s, ...update } : s),
+    } : l)
+  }
+
+  function handleBatchUpdateShapes(layerId: string, updates: Array<{ shapeId: string; patch: Partial<Shape> }>) {
+    if (updates.length === 0) return
+    commit()
+    const patchMap = new Map(updates.map(u => [u.shapeId, u.patch]))
+    layers = layers.map(l => l.id === layerId ? {
+      ...l,
+      shapes: l.shapes.map(s => {
+        const patch = patchMap.get(s.id)
+        return patch ? { ...s, ...patch } : s
+      }),
     } : l)
   }
 
@@ -366,37 +444,61 @@
   }
 
   function drawSelectionOutline(ctx: CanvasRenderingContext2D) {
-    if (!activeShapeId) return
-    let shape: Shape | null = null
-    for (const l of resolvedLayers) {
-      shape = l.shapes.find(s => s.id === activeShapeId) ?? null
-      if (shape) break
+    if (selectedShapeIds.length === 0) return
+    const allShapes = resolvedLayers.flatMap(l => l.shapes)
+
+    ctx.globalCompositeOperation = 'difference'
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 0.75
+    ctx.setLineDash([])
+
+    for (const id of selectedShapeIds) {
+      const shape = allShapes.find(s => s.id === id)
+      if (!shape) continue
+
+      ctx.save()
+
+      if (shape.pts && shape.type !== 'arc') {
+        const p = shape.pts
+        const xs = p.filter((_, i) => i % 2 === 0).map(v => v * artW)
+        const ys = p.filter((_, i) => i % 2 === 1).map(v => v * artH)
+        const minX = Math.min(...xs), maxX = Math.max(...xs)
+        const minY = Math.min(...ys), maxY = Math.max(...ys)
+        const pad = 4
+
+        if (shape.transform) {
+          let pivotX: number, pivotY: number
+          if (shape.type === 'triangle') {
+            pivotX = (p[0] + p[2] + p[4]) / 3 * artW
+            pivotY = (p[1] + p[3] + p[5]) / 3 * artH
+          } else {
+            // line / curve / spline: midpoint of first and last point
+            pivotX = (p[0] + p[p.length - 2]) / 2 * artW
+            pivotY = (p[1] + p[p.length - 1]) / 2 * artH
+          }
+          applyTransform(ctx, shape.transform, pivotX, pivotY)
+        }
+
+        ctx.strokeRect(minX - pad, minY - pad,
+          maxX - minX + pad * 2,
+          maxY - minY + pad * 2)
+      } else {
+        const pad = 3
+        const pw = shape.geom.w * artW
+        const ph = shape.geom.h * artW
+        const px = shape.geom.x * artW
+        const py = shape.geom.y * artH
+
+        if (shape.transform) applyTransform(ctx, shape.transform, px, py)
+
+        ctx.strokeRect(px - pw / 2 - pad, py - ph / 2 - pad, pw + pad * 2, ph + pad * 2)
+      }
+
+      ctx.restore()
     }
-    if (!shape) return
 
-    ctx.save()
-    ctx.globalAlpha = 0.6
-    ctx.strokeStyle = '#94a3b8'
-    ctx.lineWidth = 1
-    ctx.setLineDash([4, 4])
-
-    if (shape.pts) {
-      const xs = shape.pts.filter((_, i) => i % 2 === 0).map(v => v * artW)
-      const ys = shape.pts.filter((_, i) => i % 2 === 1).map(v => v * artH)
-      const pad = 4
-      ctx.strokeRect(Math.min(...xs) - pad, Math.min(...ys) - pad,
-        Math.max(...xs) - Math.min(...xs) + pad * 2,
-        Math.max(...ys) - Math.min(...ys) + pad * 2)
-    } else {
-      const pad = 3
-      const pw = shape.geom.w * artW
-      const ph = shape.geom.h * artW
-      const px = shape.geom.x * artW - pw / 2 - pad
-      const py = shape.geom.y * artH - ph / 2 - pad
-      ctx.strokeRect(px, py, pw + pad * 2, ph + pad * 2)
-    }
-
-    ctx.restore()
+    ctx.globalCompositeOperation = 'source-over'
   }
 
   // ── Canvas size change ─────────────────────────────────────────────────────
@@ -414,6 +516,7 @@
     layers        = [{ id, name: 'Layer 1', visible: true, mode: 'manual', shapes: [], query: '' }]
     activeLayerId = id
     activeShapeId = null
+    selectedShapeIds = []
     past = []; future = []
   }
 
@@ -435,8 +538,9 @@
       const { layers: newLayers, artW: newW, artH: newH, customPalettes: newPalettes } = parseProject(content)
       layers          = newLayers
       customPalettes  = newPalettes ?? []
-      activeLayerId   = newLayers[newLayers.length - 1]?.id ?? null
-      activeShapeId   = null
+      activeLayerId    = newLayers[newLayers.length - 1]?.id ?? null
+      activeShapeId    = null
+      selectedShapeIds = []
       past = []; future = []
       if (newW !== artW || newH !== artH) await handleSizeChange(newW, newH)
       else { updateVP(); fit() }
@@ -475,11 +579,10 @@
     if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
     if (mod && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) { e.preventDefault(); redo(); return }
 
-    // Cut (delete selected shape)
-    if (mod && e.key === 'x' && activeShapeId) {
+    // Cut (delete selected shapes)
+    if (mod && e.key === 'x' && selectedShapeIds.length > 0) {
       e.preventDefault()
-      const layer = layers.find(l => l.id === activeLayerId)
-      if (layer) handleDeleteShape(layer.id, activeShapeId)
+      handleDeleteSelected()
       return
     }
 
@@ -526,13 +629,16 @@
   {panY}
   activeLayerId={drawableLayerId}
   {activeLayerShapes}
+  {selectedShapeIds}
   onCanvas2d={initCanvas2D}
   onZoomChange={(z, px, py) => { zoom = z; panX = px; panY = py }}
   onPanChange={(px, py) => { panX = px; panY = py }}
   onStartDraw={handleStartDraw}
   onSelectShape={handleSelectShape}
-  onDeselect={() => { activeShapeId = null }}
+  onToggleShape={handleToggleShape}
+  onDeselect={() => { activeShapeId = null; selectedShapeIds = [] }}
   onUpdateGeom={handleUpdateGeom}
+  onMoveBatch={handleMoveBatch}
   onUpdatePts={(layerId, shapeId, pts) => {
     const key = `pts:${layerId}:${shapeId}`
     if (key !== _lastGeomCommitKey) { commit(); _lastGeomCommitKey = key }
@@ -548,8 +654,9 @@
   {layers}
   {activeLayerId}
   {activeShapeId}
+  {selectedShapeIds}
   {activeTab}
-  onTabChange={(t: 'layers' | 'effects' | 'palettes') => activeTab = t}
+  onTabChange={(t: 'layers' | 'effects' | 'palettes' | 'samples') => activeTab = t}
   onAddLayer={handleAddLayer}
   onSelectLayer={handleSelectLayer}
   onDeleteLayer={handleDeleteLayer}
@@ -563,12 +670,33 @@
   onSelectShape={handleSelectShape}
   onDeleteShape={handleDeleteShape}
   onUpdateShape={handleUpdateShape}
+  onBatchUpdateShapes={handleBatchUpdateShapes}
   onUpdateGeom={handleUpdateGeom}
   palettes={allPalettes}
   onAddPalette={handleAddPalette}
   onUpdatePalette={handleUpdatePalette}
   onDeletePalette={handleDeletePalette}
+  {panelWidth}
+  onSetPanelW={(w) => { panelWidth = w; updateVP() }}
+  {codePanelPos}
+  onSetCodePanelPos={(p) => { codePanelPos = p }}
 />
+
+{#if codePanelPos === 'bottom'}
+  {@const activeCodeLayer = layers.find(l => l.id === activeLayerId && l.mode === 'code') ?? null}
+  {#if activeCodeLayer}
+    <BottomCodePanel
+      activeLayer={activeCodeLayer}
+      {artW}
+      {artH}
+      palettes={allPalettes}
+      onSetQuery={handleSetQuery}
+      height={codePanelH}
+      onHeightChange={(h) => { codePanelH = h }}
+      onMoveToRight={() => { codePanelPos = 'right' }}
+    />
+  {/if}
+{/if}
 
 <StatusBar
   {zoom}

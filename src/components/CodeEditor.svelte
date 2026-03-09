@@ -36,7 +36,7 @@
       background: 'var(--cm-bg)',
       color: 'var(--cm-text)',
       fontFamily: "'Menlo', 'Consolas', 'Monaco', monospace",
-      fontSize: '11px',
+      fontSize: 'var(--cm-font-size, 11px)',
     },
     '.cm-content': {
       caretColor: 'var(--cm-cursor)',
@@ -61,7 +61,7 @@
     },
     '.cm-tooltip-autocomplete > ul': {
       fontFamily: "'Menlo', 'Consolas', 'Monaco', monospace",
-      fontSize: '11px',
+      fontSize: 'var(--cm-font-size, 11px)',
       maxHeight: '200px',
     },
     '.cm-tooltip-autocomplete > ul > li': {

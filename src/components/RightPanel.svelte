@@ -2,6 +2,8 @@
   import type { Layer, Shape, ShapeEffect, ShapeGeom } from '../lib/layers/types'
   import type { Palette } from '../lib/palettes/index'
   import { evaluateQuery } from '../lib/query/index'
+  import { API_SNIPPETS } from '../lib/api-snippets'
+  import { adjustEditorFontSize } from '../lib/editor-font'
   import ColorPicker from './ColorPicker.svelte'
   import GradColorEditor from './GradColorEditor.svelte'
   import CodeEditor from './CodeEditor.svelte'
@@ -13,6 +15,7 @@
     layers,
     activeLayerId,
     activeShapeId,
+    selectedShapeIds,
     activeTab,
     onTabChange,
     onAddLayer,
@@ -28,19 +31,25 @@
     onSelectShape,
     onDeleteShape,
     onUpdateShape,
+    onBatchUpdateShapes,
     onUpdateGeom,
     palettes,
     onAddPalette,
     onUpdatePalette,
     onDeletePalette,
+    panelWidth,
+    onSetPanelW,
+    codePanelPos,
+    onSetCodePanelPos,
   }: {
     artW: number
     artH: number
     layers: Layer[]
     activeLayerId: string | null
     activeShapeId: string | null
-    activeTab: 'layers' | 'effects' | 'palettes'
-    onTabChange: (t: 'layers' | 'effects' | 'palettes') => void
+    selectedShapeIds: string[]
+    activeTab: 'layers' | 'effects' | 'palettes' | 'samples'
+    onTabChange: (t: 'layers' | 'effects' | 'palettes' | 'samples') => void
     onAddLayer: () => void
     onSelectLayer: (id: string) => void
     onDeleteLayer: (id: string) => void
@@ -54,17 +63,47 @@
     onSelectShape: (shapeId: string) => void
     onDeleteShape: (layerId: string, shapeId: string) => void
     onUpdateShape: (layerId: string, shapeId: string, update: Partial<Shape>) => void
+    onBatchUpdateShapes: (layerId: string, updates: Array<{ shapeId: string; patch: Partial<Shape> }>) => void
     onUpdateGeom: (layerId: string, shapeId: string, geom: ShapeGeom) => void
     palettes: Palette[]
     onAddPalette: () => void
     onUpdatePalette: (id: string, update: Partial<Palette>) => void
     onDeletePalette: (id: string) => void
+    panelWidth: number
+    onSetPanelW: (w: number) => void
+    codePanelPos: 'right' | 'bottom'
+    onSetCodePanelPos: (p: 'right' | 'bottom') => void
   } = $props()
 
-  const activeLayer = $derived(layers.find(l => l.id === activeLayerId) ?? null)
-  const activeShape = $derived(activeLayer?.shapes.find(s => s.id === activeShapeId) ?? null)
-  const isCodeMode  = $derived(activeLayer?.mode === 'code')
-  const codeResult  = $derived(isCodeMode && activeLayer ? evaluateQuery(activeLayer.query, artW, artH, palettes) : null)
+  const activeLayer  = $derived(layers.find(l => l.id === activeLayerId) ?? null)
+  const activeShape  = $derived(activeLayer?.shapes.find(s => s.id === activeShapeId) ?? null)
+  const isCodeMode   = $derived(activeLayer?.mode === 'code')
+  const codeResult   = $derived(isCodeMode && activeLayer ? evaluateQuery(activeLayer.query, artW, artH, palettes) : null)
+  const selectedShapes = $derived(
+    !isCodeMode && activeLayer ? activeLayer.shapes.filter(s => selectedShapeIds.includes(s.id)) : []
+  )
+
+  /** Apply a patch to all selected shapes (or just the active shape when only one is selected). */
+  function forAll(mkPatch: (s: Shape) => Partial<Shape>) {
+    if (!activeLayer || !activeShape) return
+    if (selectedShapes.length > 1) {
+      onBatchUpdateShapes(activeLayer.id, selectedShapes.map(s => ({ shapeId: s.id, patch: mkPatch(s) })))
+    } else {
+      onUpdateShape(activeLayer.id, activeShape.id, mkPatch(activeShape))
+    }
+  }
+
+  /** Like forAll but only targets geom-based shapes and calls onUpdateGeom for single. */
+  function forAllGeom(mkGeom: (s: Shape) => ShapeGeom) {
+    if (!activeLayer || !activeShape) return
+    if (selectedShapes.length > 1) {
+      const geomShapes = selectedShapes.filter(s => s.type === 'rect' || s.type === 'ellipse' || s.type === 'arc')
+      if (geomShapes.length > 0)
+        onBatchUpdateShapes(activeLayer.id, geomShapes.map(s => ({ shapeId: s.id, patch: { geom: mkGeom(s) } })))
+    } else {
+      onUpdateGeom(activeLayer.id, activeShape.id, mkGeom(activeShape))
+    }
+  }
 
   const geomKeys: { label: string; key: 'x' | 'y' | 'w' | 'h' }[] = [
     { label: 'X center', key: 'x' },
@@ -112,33 +151,7 @@
   let apiOpen      = $state(false)
   let editorRef    = $state<{ insertAtCursor: (t: string) => void; getColorAtCursor: () => { hex: string; from: number; to: number } | null; replaceRange: (from: number, to: number, text: string) => void; focus: () => void } | null>(null)
 
-  const apiSnippets: { name: string; sig: string; code: string }[] = [
-    { name: 'rect',     sig: 'x, y, w, h, color?, opacity?, stroke?',        code: "rect(0.5, 0.5, 0.3, 0.3, '#8b5cf6', 0.85)" },
-    { name: 'ellipse',  sig: 'x, y, w, h, color?, opacity?, stroke?',        code: "ellipse(0.5, 0.5, 0.3, 0.3, '#8b5cf6', 0.85)" },
-    { name: 'triangle', sig: 'x1,y1, x2,y2, x3,y3, color?, opacity?, stroke?', code: "triangle(0.5, 0.1, 0.2, 0.9, 0.8, 0.9, '#8b5cf6', 0.85)" },
-    { name: 'arc',      sig: 'cx, cy, r, startDeg, endDeg, color?, opacity?, stroke?', code: "arc(0.5, 0.5, 0.2, 0, 270, '#8b5cf6', 0.85)" },
-    { name: 'line',     sig: 'x1, y1, x2, y2, color?, opacity?, width?',     code: "line(0.1, 0.5, 0.9, 0.5, '#8b5cf6', 0.85)" },
-    { name: 'curve',    sig: 'x1, y1, cx, cy, x2, y2, color?, opacity?, width?', code: "curve(0.1, 0.5, 0.5, 0.15, 0.9, 0.5, '#8b5cf6', 0.85)" },
-    { name: 'spline',      sig: '[x1,y1,...], color?, opacity?, width?',        code: "spline([0.1, 0.3, 0.3, 0.7, 0.5, 0.4, 0.7, 0.7, 0.9, 0.3], '#8b5cf6', 0.85)" },
-    { name: 'beginSpline', sig: '—',                                           code: "beginSpline()\nrepeat(20, (i, t) => {\n  vertex(t, 0.3 + nz(t * 4) * 0.4)\n})\nendSpline('#8b5cf6', 0.85)" },
-    { name: 'vertex',      sig: 'x, y',                                        code: "vertex(0.5, 0.3)" },
-    { name: 'endSpline',   sig: 'color?, opacity?, width?',                    code: "endSpline('#8b5cf6', 0.85, 0.006)" },
-    { name: 'nz',          sig: 'x, y? → 0..1',                               code: "// nz(x, y) — deterministic value noise\nbeginSpline()\nrepeat(20, (i, t) => {\n  vertex(t, 0.3 + nz(t * 4) * 0.4)\n})\nendSpline('#8b5cf6', 0.85)" },
-    { name: 'stroke',    sig: "hex, opacity?, width?, align?, join?",           code: "stroke('#000000', 1, 0.005)" },
-    { name: 'rotate',    sig: 'deg',                                           code: "rotate(45)" },
-    { name: 'transform', sig: '{ rotate?, scaleX?, scaleY?, skewX?, skewY? }', code: "transform({ rotate: 45, scaleX: 1.2 })" },
-    { name: 'shadow',   sig: "color?, opacity?, blur?, offsetX?, offsetY?",   code: "shadow('#000000', 0.5, 10, 0, 4)" },
-    { name: 'blur',     sig: 'amount?',                                        code: "blur(4)" },
-    { name: 'bevel',    sig: 'intensity?',                                     code: "bevel(0.6)" },
-    { name: 'noise',    sig: 'amount?',                                        code: "noise(0.3)" },
-    { name: 'warp',     sig: 'strength?, freq?',                              code: "warp(8, 0.05)" },
-    { name: 'grad',      sig: 'angle, …stops',                                code: "grad(90, '#8b5cf6', '#4ecdc4')" },
-    { name: 'radGrad',  sig: '…stops',                                       code: "radGrad('#8b5cf6', '#4ecdc4')" },
-    { name: 'repeat',   sig: 'n, (i, t) => { }',                                    code: "repeat(8, (i, t) => {\n  rect((i + 0.5) / 8, 0.5, 0.1, 0.1)\n})" },
-    { name: 'grid',     sig: 'cols, rows, (c, r, ct, rt) => { }',                  code: "grid(4, 4, (c, r) => {\n  rect((c + 0.5) / 4, (r + 0.5) / 4, 0.2, 0.2)\n})" },
-    { name: 'wave',     sig: 'n, amplitude, frequency, (i, t, x, y) => { }',      code: "wave(16, 0.2, 1.5, (i, t, x, y) => {\n  ellipse(x, y, 0.04, 0.04, '#8b5cf6', 0.85)\n})" },
-    { name: 'circular', sig: 'n, cx, cy, r, (i, t, x, y, angle) => { }',         code: "circular(12, 0.5, 0.5, 0.35, (i, t, x, y, angle) => {\n  ellipse(x, y, 0.06, 0.06, '#8b5cf6', 0.85)\n})" },
-  ]
+  const apiSnippets = API_SNIPPETS
 
   // ── Cursor color detection ─────────────────────────────────────────────────
   let cursorColor = $state<{ hex: string; from: number; to: number } | null>(null)
@@ -160,6 +173,102 @@
   function insertSnippet(code: string) {
     if (!activeLayer) return
     editorRef?.insertAtCursor(code)
+  }
+
+  // ── Samples ───────────────────────────────────────────────────────────────
+  const SAMPLES: { name: string; desc: string; code: string }[] = [
+    {
+      name: 'Noise Waves',
+      desc: 'Horizontal splines warped by value noise',
+      code: `repeat(14, (i, a) => {
+  beginSpline()
+  repeat(80, (j, t) => {
+    vertex(t, lerp(0.08, 0.92, a) + nz(t * 5 + i * 1.7) * 0.04)
+  })
+  endSpline(grad(90, palette('Aurora')), lerp(0.2, 0.9, a), 0.003)
+})`,
+    },
+    {
+      name: 'Dot Grid',
+      desc: 'Noise-sized grid of circles from a palette',
+      code: `grid(14, 18, (c, r, ct, rt) => {
+  const n = nz(ct * 4, rt * 4)
+  const s = lerp(0.008, 0.026, n)
+  ellipse((c + 0.5) / 14, (r + 0.5) / 18, s, s,
+    palette('Neon', c + r), lerp(0.35, 1, n))
+})`,
+    },
+    {
+      name: 'Spiral',
+      desc: 'Outward spiral of circles',
+      code: `repeat(120, (i, t) => {
+  const angle = t * TAU * 5
+  const r = 0.04 + t * 0.42
+  const s = 0.01 + t * 0.024
+  ellipse(
+    0.5 + cos(angle) * r,
+    0.5 + sin(angle) * r * (W / H),
+    s, s, palette('Sunset', i % 6), lerp(0.3, 1, t))
+})`,
+    },
+    {
+      name: 'Burst',
+      desc: 'Radial lines arranged in a ring',
+      code: `circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
+  const ir = 0.08
+  const x0 = 0.5 + cos(angle) * ir
+  const y0 = 0.5 + sin(angle) * ir * (W / H)
+  line(x0, y0, x, y, palette('Neon', i % 7), lerp(0.3, 0.85, t), 0.002)
+})`,
+    },
+    {
+      name: 'Concentric',
+      desc: 'Stacked gradient rings',
+      code: `repeat(24, (i, t) => {
+  const r = lerp(0.03, 0.47, t)
+  ellipse(0.5, 0.5, r * 2, r * 2 * (W / H),
+    grad(0, '#0d3460', '#4ecdc4', '#f0f7ff'),
+    lerp(0.03, 0.4, 1 - t))
+})`,
+    },
+    {
+      name: 'Woven',
+      desc: 'Sine waves offset per row',
+      code: `repeat(10, (i, a) => {
+  beginSpline()
+  repeat(60, (j, t) => {
+    vertex(t, lerp(0.08, 0.92, a) + sin(t * TAU * 3 + i * 1.1) * 0.055)
+  })
+  endSpline(palette('Neon', i), lerp(0.4, 0.85, a), 0.004)
+})`,
+    },
+    {
+      name: 'Noise Tiles',
+      desc: 'Rotated rectangles sized by noise',
+      code: `grid(8, 10, (c, r, ct, rt) => {
+  const n = nz(ct * 3, rt * 3)
+  const s = lerp(0.055, 0.11, n)
+  rect((c + 0.5) / 8, (r + 0.5) / 10,
+    s, s * (W / H),
+    palette('Ember', floor(n * 6)), lerp(0.5, 1, n),
+    rotate(n * 90))
+})`,
+    },
+    {
+      name: 'Wave Dots',
+      desc: 'Circles distributed along a sine wave',
+      code: `wave(40, 0.28, 1.5, (i, t, x, y) => {
+  const s = 0.012 + nz(t * 6) * 0.016
+  ellipse(x, y, s, s, palette('Ocean', i % 6), lerp(0.4, 1, t))
+})`,
+    },
+  ]
+
+  function loadSample(code: string) {
+    if (!activeLayer) return
+    onSetMode(activeLayer.id, 'code')
+    onSetQuery(activeLayer.id, code)
+    onTabChange('layers')
   }
 
   // Template builder state
@@ -284,6 +393,28 @@
 </script>
 
 <aside class="panel">
+  <!-- Panel controls: width presets + code panel position -->
+  <div class="panel-controls">
+    <div class="panel-presets">
+      {#each [[220,'S'],[280,'M'],[360,'L'],[480,'XL']] as const as [w, label]}
+        <button
+          class="preset-btn"
+          class:active={panelWidth === w}
+          onclick={() => onSetPanelW(w)}
+          title="{w}px"
+        >{label}</button>
+      {/each}
+    </div>
+    {#if activeLayer && isCodeMode}
+      <button
+        class="code-pos-btn"
+        class:active={codePanelPos === 'bottom'}
+        onclick={() => onSetCodePanelPos(codePanelPos === 'right' ? 'bottom' : 'right')}
+        title={codePanelPos === 'right' ? 'Move editor to bottom panel' : 'Move editor to right panel'}
+      >{codePanelPos === 'right' ? '↓ bottom' : '→ panel'}</button>
+    {/if}
+  </div>
+
   <!-- Tab bar -->
   <div class="tab-bar">
     <button
@@ -301,6 +432,11 @@
       class:active={activeTab === 'effects'}
       onclick={() => onTabChange('effects')}
     >Effects</button>
+    <button
+      class="tab-btn"
+      class:active={activeTab === 'samples'}
+      onclick={() => onTabChange('samples')}
+    >Samples</button>
   </div>
 
   <!-- ── Layers tab ── -->
@@ -484,8 +620,8 @@
       </section>
     {/if}
 
-    <!-- Code editor (code mode) -->
-    {#if activeLayer && isCodeMode}
+    <!-- Code editor (code mode, right-panel position only) -->
+    {#if activeLayer && isCodeMode && codePanelPos === 'right'}
       <section class="section code-section" class:expanded={codeExpanded}>
 
         <!-- Toolbar -->
@@ -502,6 +638,8 @@
             </div>
           {/if}
           <div class="code-actions">
+            <button class="code-tool-btn" title="Decrease font size" onclick={() => adjustEditorFontSize(-1)}>A−</button>
+            <button class="code-tool-btn" title="Increase font size" onclick={() => adjustEditorFontSize(1)}>A+</button>
             <button class="code-tool-btn" title="Copy code" onclick={copyCode}>copy</button>
             <button class="code-tool-btn" title="Clear" onclick={() => activeLayer && onSetQuery(activeLayer.id, '')}>clear</button>
             <button class="code-tool-btn expand-btn" class:active={codeExpanded} title={codeExpanded ? 'Collapse' : 'Expand'} onclick={() => codeExpanded = !codeExpanded}>↕</button>
@@ -587,7 +725,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="shape-row"
-              class:selected={!isCodeMode && shape.id === activeShapeId}
+              class:selected={!isCodeMode && selectedShapeIds.includes(shape.id)}
               onclick={() => { if (!isCodeMode) onSelectShape(shape.id) }}
             >
               <span class="shape-type-badge">{ ({rect:'▭',ellipse:'◯',arc:'◜',line:'╱',curve:'∿',triangle:'△',spline:'〜'} as Record<string,string>)[shape.type] }</span>
@@ -642,7 +780,7 @@
           <label class="prop-label">Color</label>
           <GradColorEditor
             color={activeShape.color}
-            onChange={(c) => onUpdateShape(activeLayer.id, activeShape.id, { color: c })}
+            onChange={(c) => forAll(() => ({ color: c }))}
           />
         </div>
 
@@ -665,21 +803,19 @@
           {#if activeShape.stroke}
             <GradColorEditor
               color={{ hex: activeShape.stroke.hex, opacity: activeShape.stroke.opacity, gradient: activeShape.stroke.gradient }}
-              onChange={(c) => onUpdateShape(activeLayer.id, activeShape.id, {
-                stroke: { ...activeShape.stroke!, hex: c.hex, opacity: c.opacity, gradient: c.gradient }
-              })}
+              onChange={(c) => forAll(s => s.stroke ? { stroke: { ...s.stroke, hex: c.hex, opacity: c.opacity, gradient: c.gradient } } : {})}
             />
             {@const sk = activeShape.stroke}
             <SliderRow id="stroke-width" label="Width" min={0.001} max={0.05} step={0.001}
               value={sk.width}
-              onchange={(v) => onUpdateShape(activeLayer.id, activeShape.id, { stroke: { ...sk, width: v } })}
+              onchange={(v) => forAll(s => s.stroke ? { stroke: { ...s.stroke, width: v } } : {})}
             />
             <div class="prop-row">
               <label class="prop-label">Align</label>
               <div class="mini-toggle">
                 {#each (['center','inner','outer'] as const) as a}
                   <button class="mini-btn" class:active={( sk.align ?? 'center') === a}
-                    onclick={() => onUpdateShape(activeLayer.id, activeShape.id, { stroke: { ...sk, align: a } })}
+                    onclick={() => forAll(s => s.stroke ? { stroke: { ...s.stroke, align: a } } : {})}
                   >{a}</button>
                 {/each}
               </div>
@@ -689,7 +825,7 @@
               <div class="mini-toggle">
                 {#each (['miter','round','bevel'] as const) as j}
                   <button class="mini-btn" class:active={(sk.join ?? 'miter') === j}
-                    onclick={() => onUpdateShape(activeLayer.id, activeShape.id, { stroke: { ...sk, join: j } })}
+                    onclick={() => forAll(s => s.stroke ? { stroke: { ...s.stroke, join: j } } : {})}
                   >{j}</button>
                 {/each}
               </div>
@@ -700,7 +836,7 @@
         <!-- Rotation slider (all shape types) -->
         <SliderRow id="shape-rotate" label="Rotate" min={-180} max={180} step={1}
           value={activeShape.transform?.rotate ?? 0}
-          onchange={(v) => onUpdateShape(activeLayer.id, activeShape.id, { transform: { ...activeShape.transform, rotate: v } })}
+          onchange={(v) => forAll(s => ({ transform: { ...s.transform, rotate: v } }))}
           style="margin-top: 10px"
         />
 
@@ -710,7 +846,14 @@
           {#each geomKeys.filter(k => activeShape.type !== 'arc' || k.key === 'x' || k.key === 'y') as { label, key }}
             <SliderRow id={`geom-${key}`} {label} min={0} max={1} step={0.001}
               value={activeShape.geom[key]}
-              onchange={(v) => onUpdateGeom(activeLayer.id, activeShape.id, { ...activeShape.geom, [key]: v })}
+              onchange={(v) => {
+                if (key === 'x' || key === 'y') {
+                  const delta = v - activeShape.geom[key]
+                  forAllGeom(s => ({ ...s.geom, [key]: s.geom[key] + delta }))
+                } else {
+                  forAllGeom(s => ({ ...s.geom, [key]: v }))
+                }
+              }}
             />
           {/each}
         {/if}
@@ -720,7 +863,7 @@
           <h2 class="section-title" style:margin-top="12px">Arc</h2>
           <SliderRow id="arc-r" label="Radius" min={0.01} max={1} step={0.001}
             value={activeShape.geom.w / 2}
-            onchange={(v) => onUpdateGeom(activeLayer.id, activeShape.id, { ...activeShape.geom, w: v * 2, h: v * 2 })}
+            onchange={(v) => forAllGeom(s => ({ ...s.geom, w: v * 2, h: v * 2 }))}
           />
           {#each ['Start', 'End'] as lbl, i}
             <SliderRow id={`arc-${i}`} label={lbl} min={-360} max={360} step={1}
@@ -755,7 +898,7 @@
           {#if activeShape.type === 'line' || activeShape.type === 'curve'}
             <SliderRow id="stroke-w" label="Stroke" min={0.001} max={0.05} step={0.001}
               value={activeShape.strokeWidth ?? 0.004}
-              onchange={(v) => onUpdateShape(activeLayer.id, activeShape.id, { strokeWidth: v })}
+              onchange={(v) => forAll(() => ({ strokeWidth: v }))}
             />
           {/if}
         {/if}
@@ -979,6 +1122,28 @@
     </section>
 
   {/if}
+
+  <!-- ── Samples tab ── -->
+  {#if activeTab === 'samples'}
+    <section class="section">
+      <h2 class="section-title">Samples</h2>
+      {#if !activeLayer}
+        <p class="fx-hint">Select or add a layer first.</p>
+      {:else}
+        <div class="samples-list">
+          {#each SAMPLES as s}
+            <div class="sample-card">
+              <div class="sample-info">
+                <span class="sample-name">{s.name}</span>
+                <span class="sample-desc">{s.desc}</span>
+              </div>
+              <button class="sample-load-btn" onclick={() => loadSample(s.code)}>Load</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </section>
+  {/if}
 </aside>
 
 <style>
@@ -997,6 +1162,50 @@
     flex-direction: column;
     gap: 0;
   }
+
+  /* ── Panel controls ── */
+  .panel-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-inner);
+    flex-shrink: 0;
+    background: var(--bg-sunken);
+  }
+
+  .panel-presets {
+    display: flex;
+    gap: 2px;
+  }
+
+  .preset-btn {
+    padding: 2px 6px;
+    font-size: 10px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-5);
+    cursor: pointer;
+    transition: border-color .1s, color .1s, background .1s;
+  }
+  .preset-btn:hover { border-color: var(--text-4); color: var(--text-3); }
+  .preset-btn.active { border-color: var(--accent); color: var(--accent-text); background: var(--bg-selected); }
+
+  .code-pos-btn {
+    margin-left: auto;
+    padding: 2px 7px;
+    font-size: 10px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-5);
+    cursor: pointer;
+    transition: border-color .1s, color .1s, background .1s;
+    white-space: nowrap;
+  }
+  .code-pos-btn:hover { border-color: var(--accent); color: var(--accent-text); }
+  .code-pos-btn.active { border-color: var(--accent); color: var(--accent-text); background: var(--bg-selected); }
 
   /* ── Tab bar ── */
   .tab-bar {
@@ -1491,6 +1700,60 @@
     padding: 16px 0 8px;
     margin: 0;
   }
+
+  /* ── Samples ── */
+  .samples-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .sample-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    transition: border-color .12s;
+  }
+  .sample-card:hover { border-color: var(--accent); }
+
+  .sample-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sample-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-2);
+  }
+
+  .sample-desc {
+    font-size: 10px;
+    color: var(--text-5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sample-load-btn {
+    flex-shrink: 0;
+    padding: 3px 10px;
+    font-size: 10px;
+    background: var(--bg-selected);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--accent-text);
+    cursor: pointer;
+    transition: background .1s;
+  }
+  .sample-load-btn:hover { background: var(--accent); color: #fff; }
 
   /* ── Shape list (type selector) ── */
   .shape-list {

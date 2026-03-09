@@ -37,7 +37,7 @@ function makeGradient(
   return cg
 }
 
-function applyTransform(ctx: CanvasRenderingContext2D, t: ShapeTransform, cx: number, cy: number) {
+export function applyTransform(ctx: CanvasRenderingContext2D, t: ShapeTransform, cx: number, cy: number) {
   ctx.translate(cx, cy)
   if (t.skewX || t.skewY) {
     ctx.transform(1, Math.tan((t.skewY ?? 0) * Math.PI / 180),

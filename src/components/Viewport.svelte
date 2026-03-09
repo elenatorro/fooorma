@@ -12,13 +12,16 @@
     panY,
     activeLayerId,
     activeLayerShapes,
+    selectedShapeIds,
     onCanvas2d,
     onZoomChange,
     onPanChange,
     onStartDraw,
     onSelectShape,
+    onToggleShape,
     onDeselect,
     onUpdateGeom,
+    onMoveBatch,
     onUpdatePts,
   }: {
     artW: number
@@ -28,13 +31,16 @@
     panY: number
     activeLayerId: string | null
     activeLayerShapes: Shape[]
+    selectedShapeIds: string[]
     onCanvas2d: (canvas: HTMLCanvasElement) => void
     onZoomChange: (zoom: number, px: number, py: number) => void
     onPanChange: (px: number, py: number) => void
     onStartDraw: (layerId: string, geom: ShapeGeom) => string
     onSelectShape: (shapeId: string) => void
+    onToggleShape: (shapeId: string) => void
     onDeselect: () => void
     onUpdateGeom: (layerId: string, shapeId: string, geom: ShapeGeom) => void
+    onMoveBatch: (layerId: string, moves: Array<{ shapeId: string; geom?: ShapeGeom; pts?: number[] }>) => void
     onUpdatePts: (layerId: string, shapeId: string, pts: number[]) => void
   } = $props()
 
@@ -67,6 +73,13 @@
     origPts: number[]
     startNx: number
     startNy: number
+  } | null>(null)
+
+  // Multi-shape move drag
+  let multiMoveDrag = $state<{
+    startNx: number
+    startNy: number
+    origShapes: Array<{ id: string; geom: ShapeGeom; pts?: number[]; type: string }>
   } | null>(null)
 
   // Hover hit ($state so cursor derived tracks it)
@@ -132,17 +145,30 @@
       const { nx, ny } = clientToNorm(e.clientX, e.clientY, rect, artW, artH)
       const hit = hitTest(nx, ny)
       if (hit) {
-        // Select + move mode
-        onSelectShape(hit.id)
-        if (hit.pts && hit.type !== 'arc') {
-          ptsDrag  = { shapeId: hit.id, origPts: [...hit.pts], startNx: nx, startNy: ny }
+        if (e.shiftKey) {
+          // Shift+click: toggle shape in/out of selection
+          onToggleShape(hit.id)
+        } else if (selectedShapeIds.includes(hit.id) && selectedShapeIds.length > 1) {
+          // Clicking inside a multi-selection: move all together
+          multiMoveDrag = {
+            startNx: nx, startNy: ny,
+            origShapes: activeLayerShapes
+              .filter(s => selectedShapeIds.includes(s.id))
+              .map(s => ({ id: s.id, geom: { ...s.geom }, pts: s.pts ? [...s.pts] : undefined, type: s.type })),
+          }
         } else {
-          moveDrag = { shapeId: hit.id,
-            offsetNx: nx - hit.geom.x, offsetNy: ny - hit.geom.y,
-            origW: hit.geom.w, origH: hit.geom.h }
+          // Single select + move
+          onSelectShape(hit.id)
+          if (hit.pts && hit.type !== 'arc') {
+            ptsDrag  = { shapeId: hit.id, origPts: [...hit.pts], startNx: nx, startNy: ny }
+          } else {
+            moveDrag = { shapeId: hit.id,
+              offsetNx: nx - hit.geom.x, offsetNy: ny - hit.geom.y,
+              origW: hit.geom.w, origH: hit.geom.h }
+          }
         }
-      } else {
-        // Draw mode — clicking empty canvas also deselects
+      } else if (!e.shiftKey) {
+        // Click on empty canvas (no shift): deselect and enter draw mode
         onDeselect()
         drawDrag = { startNx: nx, startNy: ny }
       }
@@ -161,6 +187,19 @@
 
     const rect = artboardHost.getBoundingClientRect()
     const { nx, ny } = clientToNorm(e.clientX, e.clientY, rect, artW, artH)
+
+    if (multiMoveDrag && activeLayerId) {
+      const dx = nx - multiMoveDrag.startNx
+      const dy = ny - multiMoveDrag.startNy
+      const moves = multiMoveDrag.origShapes.map(orig => {
+        if (orig.pts && orig.type !== 'arc') {
+          return { shapeId: orig.id, pts: orig.pts.map((v, i) => i % 2 === 0 ? v + dx : v + dy) }
+        }
+        return { shapeId: orig.id, geom: { ...orig.geom, x: orig.geom.x + dx, y: orig.geom.y + dy } }
+      })
+      onMoveBatch(activeLayerId, moves)
+      return
+    }
 
     if (ptsDrag && activeLayerId) {
       const dx = nx - ptsDrag.startNx
@@ -210,6 +249,7 @@
     drawingShapeId = null
     moveDrag       = null
     ptsDrag        = null
+    multiMoveDrag  = null
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -245,7 +285,7 @@
       ? 'grabbing'
       : spaceHeld
         ? 'grab'
-        : (moveDrag !== null || ptsDrag !== null)
+        : (moveDrag !== null || ptsDrag !== null || multiMoveDrag !== null)
           ? 'move'
           : activeLayerId
             ? (hoverHit ? 'move' : 'crosshair')
@@ -287,7 +327,7 @@
     top: 44px;
     left: 0;
     right: var(--panel-w, 260px);
-    bottom: 36px;
+    bottom: calc(36px + var(--code-panel-h, 0px));
     background: var(--viewport-bg);
     overflow: hidden;
     /* subtle grid to show the void */
