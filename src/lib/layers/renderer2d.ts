@@ -259,7 +259,7 @@ export function renderLayers2D(
         dc.shadowOffsetY = shadowFx.offsetY ?? 4
       }
 
-      if (type === 'line' || type === 'curve') {
+      if (type === 'line' || type === 'curve' || type === 'spline') {
         const p = shape.pts!
         const [bl, bt, bw, bh] = ptsBBox(p, artW, artH)
         if (shape.transform) {
@@ -276,10 +276,29 @@ export function renderLayers2D(
         }
         dc.lineWidth = (shape.strokeWidth ?? 0.004) * artW
         dc.lineCap   = 'round'
+        dc.lineJoin  = 'round'
         dc.beginPath()
         dc.moveTo(p[0] * artW, p[1] * artH)
         if (type === 'curve') {
           dc.quadraticCurveTo(p[2] * artW, p[3] * artH, p[4] * artW, p[5] * artH)
+        } else if (type === 'spline') {
+          // Catmull-Rom → cubic Bezier
+          const n = p.length / 2  // number of points
+          for (let i = 0; i < n - 1; i++) {
+            const i0 = Math.max(0, i - 1) * 2
+            const i1 = i * 2
+            const i2 = (i + 1) * 2
+            const i3 = Math.min(n - 1, i + 2) * 2
+            const x0 = p[i0] * artW, y0 = p[i0+1] * artH
+            const x1 = p[i1] * artW, y1 = p[i1+1] * artH
+            const x2 = p[i2] * artW, y2 = p[i2+1] * artH
+            const x3 = p[i3] * artW, y3 = p[i3+1] * artH
+            const cp1x = x1 + (x2 - x0) / 6
+            const cp1y = y1 + (y2 - y0) / 6
+            const cp2x = x2 - (x3 - x1) / 6
+            const cp2y = y2 - (y3 - y1) / 6
+            dc.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x2, y2)
+          }
         } else {
           dc.lineTo(p[2] * artW, p[3] * artH)
         }

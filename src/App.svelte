@@ -11,6 +11,7 @@
   import { serializeProject, parseProject } from './lib/persist/index'
   import { BUILTIN_PALETTES } from './lib/palettes/index'
   import type { Palette } from './lib/palettes/index'
+  import { MIN_ZOOM, MAX_ZOOM, MAX_RENDER_SCALE } from './lib/viewport'
 
   // ── Theme ──────────────────────────────────────────────────────────────────
   const THEME_KEY = 'forma_theme'
@@ -89,7 +90,7 @@
 
   function stepZoom(dir: number) {
     const factor = dir > 0 ? 1.2 : 1 / 1.2
-    zoom = clamp(zoom * factor, 0.05, 20)
+    zoom = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM)
   }
 
   // ── History (undo / redo) ──────────────────────────────────────────────────
@@ -346,15 +347,18 @@
     if (ctx2d && canvas2d) {
       // Scale canvas buffer to match physical pixels at current zoom,
       // so shapes stay crisp regardless of zoom level.
-      const dpr   = window.devicePixelRatio || 1
-      const scale = zoom * dpr
-      const w = Math.round(artW * scale)
-      const h = Math.round(artH * scale)
+      // renderScale is capped to MAX_RENDER_SCALE to prevent the canvas bitmap
+      // from growing unboundedly at high zoom levels (which would crash the tab).
+      // Visual zoom (CSS transform on the artboard) is unaffected by this cap.
+      const dpr         = window.devicePixelRatio || 1
+      const renderScale = Math.min(zoom * dpr, MAX_RENDER_SCALE)
+      const w = Math.round(artW * renderScale)
+      const h = Math.round(artH * renderScale)
       if (canvas2d.width !== w || canvas2d.height !== h) {
         canvas2d.width  = w
         canvas2d.height = h
       }
-      ctx2d.setTransform(scale, 0, 0, scale, 0, 0)
+      ctx2d.setTransform(renderScale, 0, 0, renderScale, 0, 0)
       renderLayers2D(ctx2d, resolvedLayers, artW, artH)
       drawSelectionOutline(ctx2d)
     }

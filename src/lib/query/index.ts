@@ -82,6 +82,11 @@ export function shapesToCode(shapes: Shape[]): string {
     const opArg    = gradient ? '1' : String(f(opacity))
     const tr  = transform ? `, ${transformStr(transform)}` : ''
     const efx = effects?.length ? ', ' + effects.map(effectStr).join(', ') : ''
+    if (type === 'spline' && pts) {
+      const ptsArg = `[${pts.map(f).join(', ')}]`
+      const sw = strokeWidth !== undefined ? `, ${f(strokeWidth)}` : ''
+      return `spline(${ptsArg}, ${colorArg}, ${opArg}${sw}${tr}${efx})`
+    }
     if (type === 'arc' && pts) {
       const r  = f(w / 2)
       const sk = stroke ? `, ${strokeStr(stroke)}` : ''
@@ -118,19 +123,23 @@ export function evaluateQuery(
   // ── Gradient helpers ──────────────────────────────────────────────────────
   type StopInput = string | [string, number?, number?]
 
-  function parseStops(args: StopInput[]): ColorStop[] {
-    const n = args.length
-    return args.map((a, i) => {
+  function parseStops(args: (StopInput | string[])[]): ColorStop[] {
+    // Allow a single string[] (palette shorthand) to be passed as one argument
+    const flat: StopInput[] = (args.length === 1 && Array.isArray(args[0]) && args[0].every(a => typeof a === 'string'))
+      ? (args[0] as string[])
+      : (args as StopInput[])
+    const n = flat.length
+    return flat.map((a, i) => {
       if (typeof a === 'string') return { hex: a, opacity: 1, pos: n <= 1 ? 0 : i / (n - 1) }
       const [hex, opacity = 1, pos] = a
       return { hex, opacity, pos: pos ?? (n <= 1 ? 0 : i / (n - 1)) }
     })
   }
 
-  const grad = (angle: number, ...args: StopInput[]): LinearGradient =>
+  const grad = (angle: number, ...args: (StopInput | string[])[]): LinearGradient =>
     ({ type: 'linear', angle, stops: parseStops(args) })
 
-  const radGrad = (...args: StopInput[]): RadialGradient =>
+  const radGrad = (...args: (StopInput | string[])[]): RadialGradient =>
     ({ type: 'radial', cx: 0.5, cy: 0.5, stops: parseStops(args) })
 
   // ── Type guards ───────────────────────────────────────────────────────────
@@ -306,6 +315,43 @@ export function evaluateQuery(
     shapes.push(shape)
   }
 
+  // ── Spline (Catmull-Rom through N points) ─────────────────────────────────
+  const spline = (pts: number[], colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    if (!Array.isArray(pts) || pts.length < 4) return
+    let sw: number | undefined
+    let rest: unknown[] = trailing
+    if (trailing.length > 0 && typeof trailing[0] === 'number') { sw = trailing[0] as number; rest = trailing.slice(1) }
+    const { transform: xform, effects } = collectTrailing(rest)
+    makePtsShape('spline', pts, colorArg, opacity, sw, xform, effects)
+  }
+
+  // Vertex accumulator for beginSpline / vertex / endSpline
+  let _vtx: number[] = []
+  const beginSpline = () => { _vtx = [] }
+  const vertex = (x: number, y: number) => { _vtx.push(x, y) }
+  const endSpline = (colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    if (_vtx.length < 4) return
+    let sw: number | undefined
+    let rest: unknown[] = trailing
+    if (trailing.length > 0 && typeof trailing[0] === 'number') { sw = trailing[0] as number; rest = trailing.slice(1) }
+    const { transform: xform, effects } = collectTrailing(rest)
+    makePtsShape('spline', [..._vtx], colorArg, opacity, sw, xform, effects)
+  }
+
+  // ── Value noise ───────────────────────────────────────────────────────────
+  const nz = (x: number, y = 0): number => {
+    const ix = Math.floor(x), iy = Math.floor(y)
+    const fx = x - ix, fy = y - iy
+    const fade = (t: number) => t * t * (3 - 2 * t)
+    const h = (a: number, b: number): number => {
+      const n = Math.sin(a * 127.1 + b * 311.7) * 43758.5453123
+      return n - Math.floor(n)
+    }
+    const ux = fade(fx), uy = fade(fy)
+    const a = h(ix, iy), b = h(ix + 1, iy), c = h(ix, iy + 1), d = h(ix + 1, iy + 1)
+    return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy
+  }
+
   // ── Loop helpers ──────────────────────────────────────────────────────────
   const repeat = (n: number, cb: (i: number, t: number) => void): void => {
     const count = Math.min(Math.floor(n), MAX_SHAPES)
@@ -326,6 +372,47 @@ export function evaluateQuery(
     }
   }
 
+  // wave(n, amplitude, frequency, cb(i, t, x, y))
+  // Iterates n times along a horizontal sine wave across the artboard.
+  // x goes 0→1, y = 0.5 + amplitude * sin(frequency * t * TAU)
+  const wave = (
+    n: number,
+    amplitude = 0.15,
+    frequency = 1,
+    cb: (i: number, t: number, x: number, y: number) => void,
+  ): void => {
+    const count = Math.min(Math.floor(n), MAX_SHAPES)
+    for (let i = 0; i < count; i++) {
+      if (shapes.length >= MAX_SHAPES) break
+      const t = count > 1 ? i / (count - 1) : 0
+      const x = t
+      const y = 0.5 + amplitude * Math.sin(frequency * t * Math.PI * 2)
+      cb(i, t, x, y)
+    }
+  }
+
+  // circular(n, cx, cy, r, cb(i, t, x, y, angle))
+  // Distributes n items evenly around a circle. angle is in radians.
+  // y is aspect-ratio corrected so the path is visually circular.
+  const circular = (
+    n: number,
+    cx = 0.5,
+    cy = 0.5,
+    r = 0.35,
+    cb: (i: number, t: number, x: number, y: number, angle: number) => void,
+  ): void => {
+    const count = Math.min(Math.floor(n), MAX_SHAPES)
+    const aspect = artW / artH
+    for (let i = 0; i < count; i++) {
+      if (shapes.length >= MAX_SHAPES) break
+      const t     = count > 1 ? i / count : 0
+      const angle = t * Math.PI * 2
+      const x     = cx + r * Math.cos(angle)
+      const y     = cy + r * Math.sin(angle) * aspect
+      cb(i, t, x, y, angle)
+    }
+  }
+
   // ── Math helpers ──────────────────────────────────────────────────────────
   const lerp       = (a: number, b: number, t: number) => a + (b - a) * t
   const clamp      = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
@@ -334,8 +421,11 @@ export function evaluateQuery(
   const smoothstep = (e0: number, e1: number, x: number) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t) }
 
   // ── Palette lookup ────────────────────────────────────────────────────────
-  const palette = (name: string, index: number): string => {
+  function palette(name: string): string[]
+  function palette(name: string, index: number): string
+  function palette(name: string, index?: number): string | string[] {
     const p = palettes.find(p => p.name === name)
+    if (index === undefined) return p?.colors ? [...p.colors] : []
     if (!p || p.colors.length === 0) return '#888888'
     return p.colors[((index % p.colors.length) + p.colors.length) % p.colors.length]
   }
@@ -343,29 +433,29 @@ export function evaluateQuery(
   // ── Execute ───────────────────────────────────────────────────────────────
   try {
     new Function(
-      'rect', 'ellipse', 'arc', 'line', 'curve', 'triangle',
+      'rect', 'ellipse', 'arc', 'line', 'curve', 'triangle', 'spline', 'beginSpline', 'vertex', 'endSpline',
       'stroke', 'rotate', 'transform',
       'shadow', 'blur', 'bevel', 'noise', 'warp',
-      'repeat', 'grid',
+      'repeat', 'grid', 'wave', 'circular',
       'grad', 'radGrad',
       'palette',
       'W', 'H',
       'PI', 'TAU', 'E',
       'sin', 'cos', 'tan', 'abs', 'floor', 'ceil', 'round', 'sqrt', 'pow', 'min', 'max', 'random',
-      'lerp', 'clamp', 'map', 'fract', 'smoothstep',
+      'lerp', 'clamp', 'map', 'fract', 'smoothstep', 'nz',
       code,
     )(
-      rect, ellipse, arc, line, curve, triangle,
+      rect, ellipse, arc, line, curve, triangle, spline, beginSpline, vertex, endSpline,
       mkStroke, rotate, transform,
       shadow, blur, bevel, noise, warp,
-      repeat, grid,
+      repeat, grid, wave, circular,
       grad, radGrad,
       palette,
       artW, artH,
       Math.PI, Math.PI * 2, Math.E,
       Math.sin, Math.cos, Math.tan, Math.abs, Math.floor, Math.ceil,
       Math.round, Math.sqrt, Math.pow, Math.min, Math.max, Math.random,
-      lerp, clamp, map, fract, smoothstep,
+      lerp, clamp, map, fract, smoothstep, nz,
     )
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err))

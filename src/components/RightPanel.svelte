@@ -85,6 +85,28 @@
   let dragSrcId  = $state<string | null>(null)
   let dragOverId = $state<string | null>(null)
 
+  // Shape list lazy loading
+  const listShapes = $derived(isCodeMode ? (codeResult?.shapes ?? []) : (activeLayer?.shapes ?? []))
+  let shapeListEl  = $state<HTMLDivElement | null>(null)
+  let sentinelEl   = $state<HTMLDivElement | null>(null)
+  let visibleEnd   = $state(50)
+
+  $effect(() => {
+    // Reset window when layer or total count changes
+    activeLayerId; listShapes.length
+    visibleEnd = 50
+  })
+
+  $effect(() => {
+    if (!sentinelEl || !shapeListEl) return
+    const io = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) visibleEnd = Math.min(visibleEnd + 50, listShapes.length) },
+      { root: shapeListEl },
+    )
+    io.observe(sentinelEl)
+    return () => io.disconnect()
+  })
+
   // Code editor state
   let codeExpanded = $state(false)
   let apiOpen      = $state(false)
@@ -97,6 +119,11 @@
     { name: 'arc',      sig: 'cx, cy, r, startDeg, endDeg, color?, opacity?, stroke?', code: "arc(0.5, 0.5, 0.2, 0, 270, '#8b5cf6', 0.85)" },
     { name: 'line',     sig: 'x1, y1, x2, y2, color?, opacity?, width?',     code: "line(0.1, 0.5, 0.9, 0.5, '#8b5cf6', 0.85)" },
     { name: 'curve',    sig: 'x1, y1, cx, cy, x2, y2, color?, opacity?, width?', code: "curve(0.1, 0.5, 0.5, 0.15, 0.9, 0.5, '#8b5cf6', 0.85)" },
+    { name: 'spline',      sig: '[x1,y1,...], color?, opacity?, width?',        code: "spline([0.1, 0.3, 0.3, 0.7, 0.5, 0.4, 0.7, 0.7, 0.9, 0.3], '#8b5cf6', 0.85)" },
+    { name: 'beginSpline', sig: '—',                                           code: "beginSpline()\nrepeat(20, (i, t) => {\n  vertex(t, 0.3 + nz(t * 4) * 0.4)\n})\nendSpline('#8b5cf6', 0.85)" },
+    { name: 'vertex',      sig: 'x, y',                                        code: "vertex(0.5, 0.3)" },
+    { name: 'endSpline',   sig: 'color?, opacity?, width?',                    code: "endSpline('#8b5cf6', 0.85, 0.006)" },
+    { name: 'nz',          sig: 'x, y? → 0..1',                               code: "// nz(x, y) — deterministic value noise\nbeginSpline()\nrepeat(20, (i, t) => {\n  vertex(t, 0.3 + nz(t * 4) * 0.4)\n})\nendSpline('#8b5cf6', 0.85)" },
     { name: 'stroke',    sig: "hex, opacity?, width?, align?, join?",           code: "stroke('#000000', 1, 0.005)" },
     { name: 'rotate',    sig: 'deg',                                           code: "rotate(45)" },
     { name: 'transform', sig: '{ rotate?, scaleX?, scaleY?, skewX?, skewY? }', code: "transform({ rotate: 45, scaleX: 1.2 })" },
@@ -107,8 +134,10 @@
     { name: 'warp',     sig: 'strength?, freq?',                              code: "warp(8, 0.05)" },
     { name: 'grad',      sig: 'angle, …stops',                                code: "grad(90, '#8b5cf6', '#4ecdc4')" },
     { name: 'radGrad',  sig: '…stops',                                       code: "radGrad('#8b5cf6', '#4ecdc4')" },
-    { name: 'repeat',   sig: 'n, (i, t) => { }',                             code: "repeat(8, (i, t) => {\n  rect((i + 0.5) / 8, 0.5, 0.1, 0.1)\n})" },
-    { name: 'grid',     sig: 'cols, rows, (c, r) => { }',                    code: "grid(4, 4, (c, r) => {\n  rect((c + 0.5) / 4, (r + 0.5) / 4, 0.2, 0.2)\n})" },
+    { name: 'repeat',   sig: 'n, (i, t) => { }',                                    code: "repeat(8, (i, t) => {\n  rect((i + 0.5) / 8, 0.5, 0.1, 0.1)\n})" },
+    { name: 'grid',     sig: 'cols, rows, (c, r, ct, rt) => { }',                  code: "grid(4, 4, (c, r) => {\n  rect((c + 0.5) / 4, (r + 0.5) / 4, 0.2, 0.2)\n})" },
+    { name: 'wave',     sig: 'n, amplitude, frequency, (i, t, x, y) => { }',      code: "wave(16, 0.2, 1.5, (i, t, x, y) => {\n  ellipse(x, y, 0.04, 0.04, '#8b5cf6', 0.85)\n})" },
+    { name: 'circular', sig: 'n, cx, cy, r, (i, t, x, y, angle) => { }',         code: "circular(12, 0.5, 0.5, 0.35, (i, t, x, y, angle) => {\n  ellipse(x, y, 0.06, 0.06, '#8b5cf6', 0.85)\n})" },
   ]
 
   // ── Cursor color detection ─────────────────────────────────────────────────
@@ -134,7 +163,7 @@
   }
 
   // Template builder state
-  let tpl        = $state<'single' | 'row' | 'grid' | 'spiral'>('row')
+  let tpl        = $state<'single' | 'row' | 'grid' | 'spiral' | 'wave' | 'circular'>('row')
   let tplCount   = $state(8)
   let tplCols    = $state(4)
   let tplRows    = $state(4)
@@ -183,15 +212,41 @@
     }
 
     // spiral
+    if (tpl === 'spiral') {
+      if (s === 'rect' || s === 'ellipse')
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  ${s}(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.03 + t * 0.05, 0.03 + t * 0.05, ${color}, ${op})\n})`
+      if (s === 'arc')
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  arc(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.03 + t * 0.05, 0, 270, ${color}, ${op})\n})`
+      if (s === 'line')
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const len = 0.015 + t * 0.025\n  const nx = cos(angle + PI / 2) * len\n  const ny = sin(angle + PI / 2) * len\n  line(cx - nx, cy - ny, cx + nx, cy + ny, ${color}, ${op})\n})`
+      if (s === 'curve')
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.03 + t * 0.04\n  curve(cx - d, cy, cx, cy - d, cx + d, cy, ${color}, ${op})\n})`
+      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.02 + t * 0.03\n  triangle(cx, cy - d, cx - d, cy + d, cx + d, cy + d, ${color}, ${op})\n})`
+    }
+
+    // wave
+    if (tpl === 'wave') {
+      if (s === 'rect' || s === 'ellipse')
+        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  ${s}(x, y, 1/${n} * 0.7, 1/${n} * 0.7, ${color}, ${op})\n})`
+      if (s === 'arc')
+        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  arc(x, y, 1/${n} * 0.35, 0, 270, ${color}, ${op})\n})`
+      if (s === 'line')
+        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  line(x - 0.02, y, x + 0.02, y, ${color}, ${op})\n})`
+      if (s === 'curve')
+        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  const d = 1/${n} * 0.3\n  curve(x - d, y, x, y - d, x + d, y, ${color}, ${op})\n})`
+      return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  const d = 1/${n} * 0.35\n  triangle(x, y - d, x - d, y + d, x + d, y + d, ${color}, ${op})\n})`
+    }
+
+    // circular
     if (s === 'rect' || s === 'ellipse')
-      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  ${s}(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.03 + t * 0.05, 0.03 + t * 0.05, ${color}, ${op})\n})`
+      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  ${s}(x, y, 0.08, 0.08, ${color}, ${op})\n})`
     if (s === 'arc')
-      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  arc(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.03 + t * 0.05, 0, 270, ${color}, ${op})\n})`
+      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  arc(x, y, 0.04, 0, 270, ${color}, ${op})\n})`
     if (s === 'line')
-      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const len = 0.015 + t * 0.025\n  const nx = cos(angle + PI / 2) * len\n  const ny = sin(angle + PI / 2) * len\n  line(cx - nx, cy - ny, cx + nx, cy + ny, ${color}, ${op})\n})`
+      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  const nx = cos(angle) * 0.03\n  const ny = sin(angle) * 0.03\n  line(x - nx, y - ny, x + nx, y + ny, ${color}, ${op})\n})`
     if (s === 'curve')
-      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.03 + t * 0.04\n  curve(cx - d, cy, cx, cy - d, cx + d, cy, ${color}, ${op})\n})`
-    return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.02 + t * 0.03\n  triangle(cx, cy - d, cx - d, cy + d, cx + d, cy + d, ${color}, ${op})\n})`
+      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  const d = 0.04\n  curve(x - d, y, x, y - d, x + d, y, ${color}, ${op})\n})`
+    return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  const d = 0.03\n  triangle(x, y - d, x - d, y + d, x + d, y + d, ${color}, ${op})\n})`
   }
 
   // ── Shape effect helpers ───────────────────────────────────────────────────
@@ -366,7 +421,7 @@
 
         <!-- Pattern type -->
         <div class="tpl-tabs">
-          {#each [['single','1'], ['row','↔'], ['grid','⊞'], ['spiral','◌']] as [id, icon]}
+          {#each [['single','1'], ['row','↔'], ['grid','⊞'], ['spiral','◌'], ['wave','∿'], ['circular','◎']] as [id, icon]}
             <button
               class="tpl-btn"
               class:active={tpl === id}
@@ -377,7 +432,7 @@
         </div>
 
         <!-- Count (row / spiral) -->
-        {#if tpl === 'row' || tpl === 'spiral'}
+        {#if tpl === 'row' || tpl === 'spiral' || tpl === 'wave' || tpl === 'circular'}
           <SliderRow id="tpl-count" label="Count" min={1} max={100} step={1} value={tplCount} onchange={(v) => tplCount = v} />
         {/if}
 
@@ -522,32 +577,39 @@
       </section>
     {/if}
 
-    <!-- Shapes sub-list (manual mode only) -->
-    {#if activeLayer && !isCodeMode}
+    <!-- Shapes sub-list (manual + code mode) -->
+    {#if activeLayer}
       <section class="section">
-        <h2 class="section-title">Shapes</h2>
-        <div class="shape-list">
-          {#each activeLayer.shapes as shape, i (shape.id)}
+        <h2 class="section-title">Shapes {#if listShapes.length > 0}<span class="shape-count">{listShapes.length}</span>{/if}</h2>
+        <div class="layer-shapes" bind:this={shapeListEl}>
+          {#each listShapes.slice(0, visibleEnd) as shape, i (shape.id)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="shape-row"
-              class:selected={shape.id === activeShapeId}
-              onclick={() => onSelectShape(shape.id)}
+              class:selected={!isCodeMode && shape.id === activeShapeId}
+              onclick={() => { if (!isCodeMode) onSelectShape(shape.id) }}
             >
-              <span class="shape-type-badge">{ ({rect:'▭',ellipse:'◯',arc:'◜',line:'╱',curve:'∿',triangle:'△'} as Record<string,string>)[shape.type] }</span>
+              <span class="shape-type-badge">{ ({rect:'▭',ellipse:'◯',arc:'◜',line:'╱',curve:'∿',triangle:'△',spline:'〜'} as Record<string,string>)[shape.type] }</span>
               <span class="shape-auto-name">
-                { ({rect:'Rect',ellipse:'Ellipse',arc:'Arc',line:'Line',curve:'Curve',triangle:'Triangle'} as Record<string,string>)[shape.type] } {i + 1}
+                { ({rect:'Rect',ellipse:'Ellipse',arc:'Arc',line:'Line',curve:'Curve',triangle:'Triangle',spline:'Spline'} as Record<string,string>)[shape.type] } {i + 1}
               </span>
-              <button
-                class="icon-btn delete-btn"
-                title="Delete shape"
-                onclick={(e) => { e.stopPropagation(); onDeleteShape(activeLayer.id, shape.id) }}
-              >×</button>
+              {#if !isCodeMode}
+                <button
+                  class="icon-btn delete-btn"
+                  title="Delete shape"
+                  onclick={(e) => { e.stopPropagation(); onDeleteShape(activeLayer.id, shape.id) }}
+                >×</button>
+              {/if}
             </div>
           {/each}
+          {#if visibleEnd < listShapes.length}
+            <div bind:this={sentinelEl} class="shape-list-sentinel"></div>
+          {/if}
         </div>
-        <button class="add-layer-btn" onclick={() => onAddShape(activeLayer.id)}>+ Add shape</button>
+        {#if !isCodeMode}
+          <button class="add-layer-btn" onclick={() => onAddShape(activeLayer.id)}>+ Add shape</button>
+        {/if}
       </section>
     {/if}
 
@@ -972,6 +1034,20 @@
     letter-spacing: .1em;
     color: var(--text-5);
     margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .shape-count {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--text-5);
+    background: var(--bg-hover);
+    border-radius: 8px;
+    padding: 1px 5px;
   }
 
   /* ── Layer list ── */
@@ -1067,12 +1143,22 @@
   .add-layer-btn:hover { border-color: var(--accent); color: var(--accent-text); }
 
   /* ── Shape list ── */
-  .shape-list {
+  .layer-shapes {
     display: flex;
     flex-direction: column;
     gap: 2px;
     margin-bottom: 10px;
+    max-height: 240px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
   }
+  .layer-shapes::-webkit-scrollbar       { width: 4px; }
+  .layer-shapes::-webkit-scrollbar-track { background: transparent; }
+  .layer-shapes::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .shape-list-sentinel { height: 1px; flex-shrink: 0; }
 
   .shape-row {
     display: flex;

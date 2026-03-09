@@ -114,6 +114,13 @@
       { label: 'line', detail: 'x1, y1, x2, y2, color?, opacity?, width?', type: 'function', boost: 10 }),
     snippetCompletion("curve(${x1}, ${y1}, ${cx}, ${cy}, ${x2}, ${y2})",
       { label: 'curve', detail: 'x1, y1, cx, cy, x2, y2, color?, opacity?, width?', type: 'function', boost: 10 }),
+    snippetCompletion("spline([${x1}, ${y1}, ${x2}, ${y2}, ${x3}, ${y3}])",
+      { label: 'spline', detail: '[x1,y1,...], color?, opacity?, width?', type: 'function', boost: 10 }),
+    { label: 'beginSpline', detail: 'start vertex accumulation', type: 'function', boost: 9 },
+    snippetCompletion("vertex(${x}, ${y})",
+      { label: 'vertex', detail: 'x, y', type: 'function', boost: 9 }),
+    snippetCompletion("endSpline(${color}, ${opacity})",
+      { label: 'endSpline', detail: 'color?, opacity?, width?', type: 'function', boost: 9 }),
     // Styling
     snippetCompletion("stroke('${#000000}', ${1}, ${0.005})",
       { label: 'stroke', detail: "hex, opacity?, width?, align?, join?", type: 'function', boost: 9 }),
@@ -141,6 +148,10 @@
       { label: 'repeat', detail: 'n, (i, t) => { }', type: 'function', boost: 9 }),
     snippetCompletion("grid(${4}, ${4}, (c, r, ct, rt) => {\n  ${}\n})",
       { label: 'grid', detail: 'cols, rows, (c, r, ct, rt) => { }', type: 'function', boost: 9 }),
+    snippetCompletion("wave(${12}, ${0.2}, ${1}, (i, t, x, y) => {\n  ${}\n})",
+      { label: 'wave', detail: 'n, amplitude, frequency, (i, t, x, y) => { }', type: 'function', boost: 9 }),
+    snippetCompletion("circular(${12}, ${0.5}, ${0.5}, ${0.35}, (i, t, x, y, angle) => {\n  ${}\n})",
+      { label: 'circular', detail: 'n, cx, cy, r, (i, t, x, y, angle) => { }', type: 'function', boost: 9 }),
     // Math helpers
     snippetCompletion("lerp(${a}, ${b}, ${t})",
       { label: 'lerp', detail: 'a, b, t', type: 'function', boost: 5 }),
@@ -163,6 +174,8 @@
     { label: 'min',    type: 'function', boost: 3 },
     { label: 'max',    type: 'function', boost: 3 },
     { label: 'random', type: 'function', boost: 3 },
+    snippetCompletion("nz(${x}, ${y})",
+      { label: 'nz', detail: 'x, y? → 0..1 value noise', type: 'function', boost: 4 }),
     // Constants
     { label: 'W',   detail: 'artboard width',  type: 'constant', boost: 6 },
     { label: 'H',   detail: 'artboard height', type: 'constant', boost: 6 },

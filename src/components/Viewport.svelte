@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { clientToNorm } from '../lib/layers/renderer2d'
   import type { Shape, ShapeGeom } from '../lib/layers/types'
+  import { MIN_ZOOM, MAX_ZOOM } from '../lib/viewport'
 
   const {
     artW,
@@ -37,8 +38,6 @@
     onUpdatePts: (layerId: string, shapeId: string, pts: number[]) => void
   } = $props()
 
-  const MIN_ZOOM = 0.05
-  const MAX_ZOOM = 20
 
   let viewportEl: HTMLDivElement
   let artboardHost: HTMLDivElement
@@ -305,7 +304,7 @@
     transform-origin: center center;
     background: #ffffff;
     box-shadow: 0 8px 40px var(--artboard-shadow), 0 0 0 1px rgba(128,128,128,.1);
-    border-radius: 1px;
+    outline: 1px solid var(--viewport-bg);
     will-change: transform;
     isolation: isolate;
   }
