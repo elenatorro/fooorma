@@ -168,7 +168,7 @@
   </div>
 
   <div class="export-wrap">
-    <button class="export-btn" onclick={onExport}>Export {formatLabel} {exportScale}x</button>
+    <button class="export-btn" onclick={() => { showExportMenu = false; onExport() }}>Export {formatLabel} {exportScale}x</button>
     <button class="export-arrow" onclick={() => showExportMenu = !showExportMenu}>▾</button>
     {#if showExportMenu}
       <div class="export-dropdown">

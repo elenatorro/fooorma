@@ -145,12 +145,18 @@
   }
 
   // ── History (undo / redo) ──────────────────────────────────────────────────
-  const MAX_HISTORY = 50
-  let past   = $state<Layer[][]>([])
-  let future = $state<Layer[][]>([])
+  interface HistoryEntry { layers: Layer[]; activeShapeId: string | null; selectedShapeIds: string[] }
 
-  function snapshot(): Layer[] {
-    return JSON.parse(JSON.stringify(layers)) as Layer[]
+  const MAX_HISTORY = 50
+  let past   = $state<HistoryEntry[]>([])
+  let future = $state<HistoryEntry[]>([])
+
+  function snapshot(): HistoryEntry {
+    return {
+      layers: JSON.parse(JSON.stringify(layers)) as Layer[],
+      activeShapeId,
+      selectedShapeIds: [...selectedShapeIds],
+    }
   }
 
   function commit() {
@@ -161,24 +167,35 @@
   function undo() {
     if (!past.length) return
     future = [snapshot(), ...future.slice(0, MAX_HISTORY - 1)]
-    layers = past[past.length - 1]
+    const entry = past[past.length - 1]
     past   = past.slice(0, -1)
-    activeShapeId = null
-    selectedShapeIds = []
+    layers = entry.layers
+    activeShapeId = entry.activeShapeId
+    selectedShapeIds = entry.selectedShapeIds
   }
 
   function redo() {
     if (!future.length) return
     past   = [...past.slice(-(MAX_HISTORY - 1)), snapshot()]
-    layers = future[0]
+    const entry = future[0]
     future = future.slice(1)
-    activeShapeId = null
-    selectedShapeIds = []
+    layers = entry.layers
+    activeShapeId = entry.activeShapeId
+    selectedShapeIds = entry.selectedShapeIds
   }
 
   // ── Layers ─────────────────────────────────────────────────────────────────
   const _initId = crypto.randomUUID()
-  let layers = $state<Layer[]>(_saved?.layers ?? [{ id: _initId, name: 'Layer 1', visible: true, mode: 'manual', shapes: [], query: '' }])
+  const _initShapeId = crypto.randomUUID()
+  let layers = $state<Layer[]>(_saved?.layers ?? [{
+    id: _initId, name: 'Layer 1', visible: true, bgColor: '#f5f0eb', mode: 'manual', query: '',
+    shapes: [{
+      id: _initShapeId,
+      type: 'rect',
+      color: { hex: '#8b5cf6', opacity: 0.85 },
+      geom: { x: 0.5, y: 0.5, w: 0.3, h: 0.3 },
+    }],
+  }])
   const _initActiveId = _saved
     ? (_saved.layers[_saved.activeIdx]?.id ?? _saved.layers[_saved.layers.length - 1]?.id ?? null)
     : _initId
@@ -236,6 +253,7 @@
   }
 
   function handleDeleteLayer(id: string) {
+    if (layers.length <= 1) return  // always keep at least one layer
     commit()
     layers = layers.filter(l => l.id !== id)
     if (activeLayerId === id) {
@@ -520,12 +538,12 @@
         applyCmykSoftProof(img)
         ctx2d.putImageData(img, 0, 0)
       }
-      drawSelectionOutline(ctx2d)
+      drawSelectionOutline(ctx2d, renderScale)
     }
     rafId = requestAnimationFrame(loop)
   }
 
-  function drawSelectionOutline(ctx: CanvasRenderingContext2D) {
+  function drawSelectionOutline(ctx: CanvasRenderingContext2D, scale = 1) {
     if (selectedShapeIds.length === 0) return
     const allShapes = resolvedLayers.flatMap(l => l.shapes)
 
@@ -534,7 +552,8 @@
     ctx.setLineDash([])
 
     // Two passes: white halo underneath, then blue on top
-    const passes: [string, number][] = [['#ffffff', 1.5], ['#4a90e2', 0.5]]
+    // Divide by scale so outlines look consistent regardless of zoom
+    const passes: [string, number][] = [['#ffffff', 1.5 / scale], ['#4a90e2', 0.5 / scale]]
 
     for (const [color, width] of passes) {
       ctx.strokeStyle = color
@@ -552,7 +571,7 @@
           const ys = p.filter((_, i) => i % 2 === 1).map(v => v * artH)
           const minX = Math.min(...xs), maxX = Math.max(...xs)
           const minY = Math.min(...ys), maxY = Math.max(...ys)
-          const pad = 4
+          const pad = 4 / scale
 
           if (shape.transform) {
             let pivotX: number, pivotY: number
@@ -570,7 +589,7 @@
             maxX - minX + pad * 2,
             maxY - minY + pad * 2)
         } else {
-          const pad = 3
+          const pad = 3 / scale
           const pw = shape.geom.w * artW
           const ph = shape.geom.h * artW
           const px = shape.geom.x * artW
@@ -754,6 +773,17 @@
     }
     if (mod && e.key === 'v') {
       e.preventDefault(); handlePaste(); return
+    }
+
+    // Select all shapes in active layer
+    if (mod && e.key === 'a') {
+      e.preventDefault()
+      const layer = layers.find(l => l.id === activeLayerId)
+      if (layer && layer.mode === 'manual' && layer.shapes.length > 0) {
+        selectedShapeIds = layer.shapes.map(s => s.id)
+        activeShapeId = selectedShapeIds[selectedShapeIds.length - 1]
+      }
+      return
     }
 
     if (e.key === 'Escape') { activeShapeId = null; selectedShapeIds = [] }

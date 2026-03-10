@@ -192,7 +192,8 @@
     {
       name: 'Noise Waves',
       desc: 'Horizontal splines warped by value noise',
-      code: `repeat(14, (i, a) => {
+      code: `// repeat(count, (i, t) => ...) — i: index, t: normalized 0→1
+repeat(14, (i, a) => {
   beginSpline()
   repeat(80, (j, t) => {
     vertex(t, lerp(0.08, 0.92, a) + nz(t * 5 + i * 1.7) * 0.04)
@@ -203,7 +204,8 @@
     {
       name: 'Dot Grid',
       desc: 'Noise-sized grid of circles from a palette',
-      code: `grid(14, 18, (c, r, ct, rt) => {
+      code: `// grid(cols, rows, (c, r, ct, rt) => ...) — c/r: index, ct/rt: normalized 0→1
+grid(14, 18, (c, r, ct, rt) => {
   const n = nz(ct * 4, rt * 4)
   const s = lerp(0.008, 0.026, n)
   ellipse((c + 0.5) / 14, (r + 0.5) / 18, s, s,
@@ -226,7 +228,8 @@
     {
       name: 'Burst',
       desc: 'Radial lines arranged in a ring',
-      code: `circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
+      code: `// circular(n, cx, cy, r, (i, t, x, y, angle) => ...) — t: 0→1, x/y: point, angle: radians
+circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
   const ir = 0.08
   const x0 = 0.5 + cos(angle) * ir
   const y0 = 0.5 + sin(angle) * ir * (W / H)
@@ -269,7 +272,8 @@
     {
       name: 'Wave Dots',
       desc: 'Circles distributed along a sine wave',
-      code: `wave(40, 0.28, 1.5, (i, t, x, y) => {
+      code: `// wave(n, amp, freq, (i, t, x, y) => ...) — t: 0→1, x/y: wave position
+wave(40, 0.28, 1.5, (i, t, x, y) => {
   const s = 0.012 + nz(t * 6) * 0.016
   ellipse(x, y, s, s, palette('Ocean', i % 6), lerp(0.4, 1, t))
 })`,
@@ -560,7 +564,9 @@ repeat(30, (i, t) => {
             >{layer.visible ? '👁' : '○'}</button>
 
             <!-- Shape count badge -->
-            <span class="shape-badge">{layer.shapes.length}</span>
+            <span class="shape-badge">{layer.mode === 'code' && layer.query.trim()
+              ? evaluateQuery(layer.query, artW, artH, palettes).shapes.length
+              : layer.shapes.length}</span>
 
             <!-- Name (or rename input) -->
             {#if editingId === layer.id}
