@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte'
+  import { onMount } from 'svelte'
   import { clientToNorm } from '../lib/layers/renderer2d'
   import type { Shape, ShapeGeom } from '../lib/layers/types'
   import { MIN_ZOOM, MAX_ZOOM } from '../lib/viewport'
@@ -267,11 +267,162 @@
     if (e.code === 'Space') spaceHeld = false
   }
 
+  /** Pick a nice tick interval for rulers based on zoom level */
+  function rulerStep(zoom: number): number {
+    const pxPerUnit = zoom  // 1 artboard-px = `zoom` screen-px
+    // We want ticks roughly every 60-120 screen-px apart
+    const raw = 80 / pxPerUnit
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)))
+    const norm = raw / mag
+    if (norm < 2) return mag * 1
+    if (norm < 5) return mag * 2
+    return mag * 5
+  }
+
+  function drawRulers() {
+    if (!rulerH || !rulerV || !viewportEl) return
+    const dpr = window.devicePixelRatio || 1
+    const vpRect = viewportEl.getBoundingClientRect()
+    const vpW = vpRect.width
+    const vpH = vpRect.height
+
+    // --- Horizontal ruler ---
+    const hRulerW = vpW - RULER_SIZE
+    rulerH.width  = hRulerW * dpr
+    rulerH.height = RULER_SIZE * dpr
+    rulerH.style.width  = hRulerW + 'px'
+    rulerH.style.height = RULER_SIZE + 'px'
+    const hCtx = rulerH.getContext('2d')!
+    hCtx.scale(dpr, dpr)
+
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light'
+    const textColor = isDark ? '#a0a0b0' : '#555568'
+    const lineColor = isDark ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.15)'
+    const bgColor   = isDark ? '#131316' : '#ebebef'
+
+    hCtx.fillStyle = bgColor
+    hCtx.fillRect(0, 0, hRulerW, RULER_SIZE)
+
+    // Artboard left edge in viewport screen coords, offset by ruler bar
+    const artScreenLeft = vpW / 2 + panX - (artW / 2) * zoom - RULER_SIZE
+    const step = rulerStep(zoom)
+    const startPx = Math.floor(-artScreenLeft / (zoom * step)) * step
+    const endPx   = Math.ceil((hRulerW - artScreenLeft) / (zoom * step)) * step
+
+    hCtx.fillStyle = textColor
+    hCtx.font = '11px system-ui, sans-serif'
+    hCtx.textAlign = 'center'
+    hCtx.textBaseline = 'top'
+
+    for (let px = startPx; px <= endPx; px += step) {
+      const sx = artScreenLeft + px * zoom
+      if (sx < 0 || sx > hRulerW) continue
+
+      // Major tick
+      hCtx.strokeStyle = lineColor
+      hCtx.beginPath()
+      hCtx.moveTo(sx, RULER_SIZE - 8)
+      hCtx.lineTo(sx, RULER_SIZE)
+      hCtx.lineWidth = 1
+      hCtx.stroke()
+
+      hCtx.fillText(String(Math.round(px)), sx, 3)
+
+      // Minor ticks (5 subdivisions)
+      const minor = step / 5
+      if (minor * zoom >= 4) { // only show if at least 4px apart
+        for (let m = 1; m < 5; m++) {
+          const mx = artScreenLeft + (px + m * minor) * zoom
+          if (mx < 0 || mx > hRulerW) continue
+          hCtx.beginPath()
+          hCtx.moveTo(mx, RULER_SIZE - 4)
+          hCtx.lineTo(mx, RULER_SIZE)
+          hCtx.stroke()
+        }
+      }
+    }
+
+    // --- Vertical ruler ---
+    const vRulerH = vpH - RULER_SIZE
+    rulerV.width  = RULER_SIZE * dpr
+    rulerV.height = vRulerH * dpr
+    rulerV.style.width  = RULER_SIZE + 'px'
+    rulerV.style.height = vRulerH + 'px'
+    const vCtx = rulerV.getContext('2d')!
+    vCtx.scale(dpr, dpr)
+
+    vCtx.fillStyle = bgColor
+    vCtx.fillRect(0, 0, RULER_SIZE, vRulerH)
+
+    const artScreenTop = vpH / 2 + panY - (artH / 2) * zoom - RULER_SIZE
+    const vStep = rulerStep(zoom)
+    const vStart = Math.floor(-artScreenTop / (zoom * vStep)) * vStep
+    const vEnd   = Math.ceil((vRulerH - artScreenTop) / (zoom * vStep)) * vStep
+
+    vCtx.fillStyle = textColor
+    vCtx.font = '11px system-ui, sans-serif'
+    vCtx.textAlign = 'center'
+    vCtx.textBaseline = 'bottom'
+
+    for (let py = vStart; py <= vEnd; py += vStep) {
+      const sy = artScreenTop + py * zoom
+      if (sy < 0 || sy > vRulerH) continue
+
+      vCtx.strokeStyle = lineColor
+      vCtx.beginPath()
+      vCtx.moveTo(RULER_SIZE - 8, sy)
+      vCtx.lineTo(RULER_SIZE, sy)
+      vCtx.lineWidth = 1
+      vCtx.stroke()
+
+      vCtx.save()
+      vCtx.translate(RULER_SIZE / 2, sy - 3)
+      vCtx.rotate(-Math.PI / 2)
+      vCtx.textAlign = 'left'
+      vCtx.textBaseline = 'middle'
+      vCtx.fillText(String(Math.round(py)), 0, 0)
+      vCtx.restore()
+
+      const vMinor = vStep / 5
+      if (vMinor * zoom >= 4) {
+        for (let m = 1; m < 5; m++) {
+          const my = artScreenTop + (py + m * vMinor) * zoom
+          if (my < 0 || my > vRulerH) continue
+          vCtx.beginPath()
+          vCtx.moveTo(RULER_SIZE - 4, my)
+          vCtx.lineTo(RULER_SIZE, my)
+          vCtx.stroke()
+        }
+      }
+    }
+  }
+
+  // Track theme so rulers repaint on theme change
+  let currentTheme = $state(document.documentElement.getAttribute('data-theme') ?? 'dark')
+
+  $effect(() => {
+    const obs = new MutationObserver(() => {
+      currentTheme = document.documentElement.getAttribute('data-theme') ?? 'dark'
+    })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => obs.disconnect()
+  })
+
+  $effect(() => {
+    // Re-draw rulers when zoom, pan, artboard size, or theme changes
+    void zoom; void panX; void panY; void artW; void artH; void currentTheme
+    drawRulers()
+  })
+
   onMount(() => {
     onCanvas2d(canvas2dEl)
+    drawRulers()
+    const onResize = () => drawRulers()
+    window.addEventListener('resize', onResize)
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup',   handleKeyUp)
     return () => {
+      window.removeEventListener('resize', onResize)
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup',   handleKeyUp)
     }
@@ -322,6 +473,11 @@
       style:height="{artH}px"
     ></canvas>
   </div>
+
+  <!-- Rulers -->
+  <canvas class="ruler ruler-h" bind:this={rulerH}></canvas>
+  <canvas class="ruler ruler-v" bind:this={rulerV}></canvas>
+  <div class="ruler-corner"></div>
 </div>
 
 <style>
@@ -354,5 +510,36 @@
 
   canvas {
     display: block;
+  }
+
+  .ruler {
+    position: absolute;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .ruler-h {
+    top: 0;
+    left: 22px;
+    right: 0;
+    height: 22px;
+    border-bottom: 1px solid rgba(128,128,128,.15);
+  }
+  .ruler-v {
+    top: 22px;
+    left: 0;
+    bottom: 0;
+    width: 22px;
+    border-right: 1px solid rgba(128,128,128,.15);
+  }
+  .ruler-corner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 22px;
+    height: 22px;
+    z-index: 11;
+    background: var(--bg-bar, #131316);
+    border-right: 1px solid rgba(128,128,128,.15);
+    border-bottom: 1px solid rgba(128,128,128,.15);
   }
 </style>
