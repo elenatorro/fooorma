@@ -1339,7 +1339,8 @@ repeat(30, (i, t) => {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 4px 8px;
+    padding: 0 8px;
+    height: 44px;
     border-bottom: 1px solid var(--border-inner);
     flex-shrink: 0;
     background: var(--bg-sunken);
@@ -1351,11 +1352,11 @@ repeat(30, (i, t) => {
   }
 
   .preset-btn {
-    padding: 2px 6px;
-    font-size: 10px;
+    padding: 5px 8px;
+    font-size: 11px;
     background: none;
     border: 1px solid var(--border);
-    border-radius: 3px;
+    border-radius: 5px;
     color: var(--text-5);
     cursor: pointer;
     transition: border-color .1s, color .1s, background .1s;
@@ -1365,11 +1366,11 @@ repeat(30, (i, t) => {
 
   .code-pos-btn {
     margin-left: auto;
-    padding: 2px 7px;
-    font-size: 10px;
+    padding: 5px 8px;
+    font-size: 11px;
     background: none;
     border: 1px solid var(--border);
-    border-radius: 3px;
+    border-radius: 5px;
     color: var(--text-5);
     cursor: pointer;
     transition: border-color .1s, color .1s, background .1s;
