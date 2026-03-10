@@ -510,6 +510,10 @@
         canvas2d.height = h
       }
       ctx2d.setTransform(renderScale, 0, 0, renderScale, 0, 0)
+      // Paint artboard white on the canvas so we don't rely on a CSS
+      // background (which causes subpixel seams at fractional zoom).
+      ctx2d.fillStyle = '#ffffff'
+      ctx2d.fillRect(0, 0, artW, artH)
       try {
         renderLayers2D(ctx2d, resolvedLayers, artW, artH)
       } catch { /* don't let a bad frame kill the render loop */ }

@@ -455,6 +455,7 @@
     `translate(calc(-50% + ${panX}px), calc(-50% + ${panY}px)) scale(${zoom})`
   )
 
+
   // Cursor style
   const cursor = $derived(
     dragging
@@ -525,9 +526,7 @@
     top: 50%;
     left: 50%;
     transform-origin: center center;
-    background: #ffffff;
-    box-shadow: 0 8px 40px var(--artboard-shadow), 0 0 0 1px rgba(128,128,128,.1);
-    outline: 1px solid var(--viewport-bg);
+    box-shadow: 0 8px 40px var(--artboard-shadow);
     will-change: transform;
     isolation: isolate;
   }
