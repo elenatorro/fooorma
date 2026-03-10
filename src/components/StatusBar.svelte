@@ -1,14 +1,18 @@
 <script lang="ts">
   const {
     zoom,
+    cmykProof,
     onZoom,
     onFit,
     onReset,
+    onToggleCmykProof,
   }: {
     zoom: number
+    cmykProof: boolean
     onZoom: (delta: number) => void
     onFit: () => void
     onReset: () => void
+    onToggleCmykProof: () => void
   } = $props()
 
   const pct = $derived(Math.round(zoom * 100))
@@ -22,6 +26,12 @@
     <button class="text-btn" onclick={onFit} title="Fit to view (0)">Fit</button>
     <button class="text-btn" onclick={onReset} title="100% (1)">1:1</button>
   </div>
+  <button
+    class="text-btn proof-btn"
+    class:active={cmykProof}
+    onclick={onToggleCmykProof}
+    title="CMYK soft-proof preview"
+  >CMYK</button>
 </footer>
 
 <style>
@@ -75,5 +85,22 @@
     width: 38px;
     text-align: center;
   }
+
+  .proof-btn {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-5);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    padding: 0 8px;
+    height: 22px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: border-color .12s, color .12s;
+  }
+  .proof-btn:hover { border-color: var(--text-6); color: var(--text-2); }
+  .proof-btn.active { border-color: var(--accent); color: var(--accent); }
 
 </style>

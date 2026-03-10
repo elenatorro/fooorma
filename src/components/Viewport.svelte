@@ -190,10 +190,12 @@
               origW: shape.geom.w, origH: shape.geom.h }
           }
         }
-      } else if (!e.shiftKey && activeLayerId) {
-        // Click on empty canvas (no shift): deselect and enter draw mode
+      } else if (!e.shiftKey) {
+        // Click on empty canvas (no shift): deselect (and enter draw mode if layer is drawable)
         onDeselect()
-        drawDrag = { startNx: nx, startNy: ny }
+        if (activeLayerId) {
+          drawDrag = { startNx: nx, startNy: ny }
+        }
       }
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     }
@@ -439,12 +441,13 @@
   onMount(() => {
     onCanvas2d(canvas2dEl)
     drawRulers()
-    const onResize = () => drawRulers()
-    window.addEventListener('resize', onResize)
+    // ResizeObserver catches both window resize and panel width changes
+    const ro = new ResizeObserver(() => drawRulers())
+    ro.observe(viewportEl)
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup',   handleKeyUp)
     return () => {
-      window.removeEventListener('resize', onResize)
+      ro.disconnect()
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup',   handleKeyUp)
     }

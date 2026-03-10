@@ -3,6 +3,12 @@
   import type { Layer, Shape, ShapeGeom } from './lib/layers/types'
   import { renderLayers2D, applyTransform } from './lib/layers/renderer2d'
   import { evaluateQuery, shapesToCode } from './lib/query/index'
+  import { encodeCmykTiff, applyCmykSoftProof } from './lib/export-cmyk-tiff'
+
+  /** Strip IDs from shapes for structural comparison (IDs are generated fresh each eval). */
+  function shapeFingerprint(shapes: Shape[]): string {
+    return JSON.stringify(shapes, (key, value) => key === 'id' ? undefined : value)
+  }
 
   /** Recursively flatten group shapes into their children (for manual mode). */
   function flattenShapes(shapes: Shape[]): Shape[] {
@@ -73,6 +79,10 @@
   // ── Artboard ──────────────────────────────────────────────────────────────
   let artW = $state(_saved?.artW ?? 794)
   let artH = $state(_saved?.artH ?? 1123)
+
+  let exportScale = $state(1)
+  let exportFormat = $state<'png' | 'cmyk-tiff'>('png')
+  let cmykProof = $state(false)
 
   // ── Zoom / pan ─────────────────────────────────────────────────────────────
   let zoom = $state(1)
@@ -274,7 +284,15 @@
     layers = layers.map(l => {
       if (l.id !== id || l.mode === mode) return l
       if (mode === 'code') {
-        // Always regenerate code from current manual shapes so edits are never lost
+        // If the existing query produces the same shapes, keep it (preserves loops etc.)
+        if (l.query.trim()) {
+          try {
+            const fromQuery = flattenShapes(evaluateQuery(l.query, artW, artH, allPalettes).shapes)
+            if (shapeFingerprint(fromQuery) === shapeFingerprint(l.shapes)) {
+              return { ...l, mode }
+            }
+          } catch { /* query eval failed — regenerate */ }
+        }
         const query = shapesToCode(l.shapes)
         return { ...l, mode, query }
       } else {
@@ -455,7 +473,7 @@
 
   // Mark dirty whenever anything that affects rendering changes
   $effect(() => {
-    void resolvedLayers; void artW; void artH; void zoom; void selectedShapeIds
+    void resolvedLayers; void artW; void artH; void zoom; void selectedShapeIds; void cmykProof
     dirty = true
   })
 
@@ -496,6 +514,12 @@
       try {
         renderLayers2D(ctx2d, resolvedLayers, artW, artH)
       } catch { /* don't let a bad frame kill the render loop */ }
+      if (cmykProof) {
+        const w = canvas2d.width, h = canvas2d.height
+        const img = ctx2d.getImageData(0, 0, w, h)
+        applyCmykSoftProof(img)
+        ctx2d.putImageData(img, 0, 0)
+      }
       drawSelectionOutline(ctx2d)
     }
     rafId = requestAnimationFrame(loop)
@@ -505,55 +529,60 @@
     if (selectedShapeIds.length === 0) return
     const allShapes = resolvedLayers.flatMap(l => l.shapes)
 
-    ctx.globalCompositeOperation = 'difference'
+    ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = 1
-    ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 0.75
     ctx.setLineDash([])
 
-    for (const id of selectedShapeIds) {
-      const shape = allShapes.find(s => s.id === id)
-      if (!shape) continue
+    // Two passes: white halo underneath, then blue on top
+    const passes: [string, number][] = [['#ffffff', 1.5], ['#4a90e2', 0.5]]
 
-      ctx.save()
+    for (const [color, width] of passes) {
+      ctx.strokeStyle = color
+      ctx.lineWidth = width
 
-      if (shape.pts && shape.type !== 'arc') {
-        const p = shape.pts
-        const xs = p.filter((_, i) => i % 2 === 0).map(v => v * artW)
-        const ys = p.filter((_, i) => i % 2 === 1).map(v => v * artH)
-        const minX = Math.min(...xs), maxX = Math.max(...xs)
-        const minY = Math.min(...ys), maxY = Math.max(...ys)
-        const pad = 4
+      for (const id of selectedShapeIds) {
+        const shape = allShapes.find(s => s.id === id)
+        if (!shape) continue
 
-        if (shape.transform) {
-          let pivotX: number, pivotY: number
-          if (shape.type === 'triangle') {
-            pivotX = (p[0] + p[2] + p[4]) / 3 * artW
-            pivotY = (p[1] + p[3] + p[5]) / 3 * artH
-          } else {
-            // line / curve / spline: midpoint of first and last point
-            pivotX = (p[0] + p[p.length - 2]) / 2 * artW
-            pivotY = (p[1] + p[p.length - 1]) / 2 * artH
+        ctx.save()
+
+        if (shape.pts && shape.type !== 'arc') {
+          const p = shape.pts
+          const xs = p.filter((_, i) => i % 2 === 0).map(v => v * artW)
+          const ys = p.filter((_, i) => i % 2 === 1).map(v => v * artH)
+          const minX = Math.min(...xs), maxX = Math.max(...xs)
+          const minY = Math.min(...ys), maxY = Math.max(...ys)
+          const pad = 4
+
+          if (shape.transform) {
+            let pivotX: number, pivotY: number
+            if (shape.type === 'triangle') {
+              pivotX = (p[0] + p[2] + p[4]) / 3 * artW
+              pivotY = (p[1] + p[3] + p[5]) / 3 * artH
+            } else {
+              pivotX = (p[0] + p[p.length - 2]) / 2 * artW
+              pivotY = (p[1] + p[p.length - 1]) / 2 * artH
+            }
+            applyTransform(ctx, shape.transform, pivotX, pivotY)
           }
-          applyTransform(ctx, shape.transform, pivotX, pivotY)
+
+          ctx.strokeRect(minX - pad, minY - pad,
+            maxX - minX + pad * 2,
+            maxY - minY + pad * 2)
+        } else {
+          const pad = 3
+          const pw = shape.geom.w * artW
+          const ph = shape.geom.h * artW
+          const px = shape.geom.x * artW
+          const py = shape.geom.y * artH
+
+          if (shape.transform) applyTransform(ctx, shape.transform, px, py)
+
+          ctx.strokeRect(px - pw / 2 - pad, py - ph / 2 - pad, pw + pad * 2, ph + pad * 2)
         }
 
-        ctx.strokeRect(minX - pad, minY - pad,
-          maxX - minX + pad * 2,
-          maxY - minY + pad * 2)
-      } else {
-        const pad = 3
-        const pw = shape.geom.w * artW
-        const ph = shape.geom.h * artW
-        const px = shape.geom.x * artW
-        const py = shape.geom.y * artH
-
-        if (shape.transform) applyTransform(ctx, shape.transform, px, py)
-
-        ctx.strokeRect(px - pw / 2 - pad, py - ph / 2 - pad, pw + pad * 2, ph + pad * 2)
+        ctx.restore()
       }
-
-      ctx.restore()
     }
 
     ctx.globalCompositeOperation = 'source-over'
@@ -608,21 +637,40 @@
   }
 
   // ── Export ─────────────────────────────────────────────────────────────────
-  function handleExport() {
+  function renderExportCanvas(): HTMLCanvasElement {
+    const s = exportScale
     const canvas = document.createElement('canvas')
-    canvas.width  = artW
-    canvas.height = artH
+    canvas.width  = artW * s
+    canvas.height = artH * s
     const ctx = canvas.getContext('2d')!
+    ctx.scale(s, s)
     renderLayers2D(ctx, resolvedLayers, artW, artH)
-    // Fill white behind all rendered content (destination-over draws src under dst)
     ctx.globalCompositeOperation = 'destination-over'
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, artW, artH)
     ctx.globalCompositeOperation = 'source-over'
-    const a = document.createElement('a')
-    a.href     = canvas.toDataURL('image/png')
-    a.download = `forma-${Date.now()}.png`
-    a.click()
+    return canvas
+  }
+
+  function handleExport() {
+    const s = exportScale
+    const canvas = renderExportCanvas()
+    if (exportFormat === 'cmyk-tiff') {
+      const ctx = canvas.getContext('2d')!
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const blob = encodeCmykTiff(imageData)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `forma-${Date.now()}@${s}x.tiff`
+      a.click()
+      URL.revokeObjectURL(url)
+    } else {
+      const a = document.createElement('a')
+      a.href     = canvas.toDataURL('image/png')
+      a.download = `forma-${Date.now()}@${s}x.png`
+      a.click()
+    }
   }
 
   // ── Clipboard / duplicate ──────────────────────────────────────────────────
@@ -708,7 +756,7 @@
       e.preventDefault(); handlePaste(); return
     }
 
-    if (e.key === 'Escape') { activeShapeId = null }
+    if (e.key === 'Escape') { activeShapeId = null; selectedShapeIds = [] }
     if (e.key === '0') { e.preventDefault(); fit() }
     if (e.key === '1') { e.preventDefault(); zoom = 1; panX = 0; panY = 0 }
     if (e.key === '+' || e.key === '=') { e.preventDefault(); stepZoom(1) }
@@ -737,6 +785,10 @@
   {theme}
   onSizeChange={handleSizeChange}
   onExport={handleExport}
+  {exportScale}
+  {exportFormat}
+  onSetExportScale={(s) => exportScale = s}
+  onSetExportFormat={(f) => exportFormat = f}
   onNew={handleNew}
   onSave={handleSave}
   onLoad={handleLoad}
@@ -823,9 +875,11 @@
 
 <StatusBar
   {zoom}
+  {cmykProof}
   onZoom={stepZoom}
   onFit={fit}
   onReset={() => { zoom = 1; panX = 0; panY = 0 }}
+  onToggleCmykProof={() => cmykProof = !cmykProof}
 />
 
 <!-- Panel resize handle -->

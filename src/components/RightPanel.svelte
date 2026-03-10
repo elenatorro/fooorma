@@ -819,9 +819,9 @@ repeat(30, (i, t) => {
               class:selected={!isCodeMode && selectedShapeIds.includes(shape.id)}
               onclick={() => { if (!isCodeMode) onSelectShape(shape.id) }}
             >
-              <span class="shape-type-badge">{ ({rect:'▭',ellipse:'◯',arc:'◜',line:'╱',curve:'∿',triangle:'△',spline:'〜'} as Record<string,string>)[shape.type] }</span>
+              <span class="shape-type-badge">{ ({rect:'▭',ellipse:'◯',arc:'◜',line:'╱',curve:'∿',triangle:'△',spline:'〜',cube:'⬡',sphere:'●',cylinder:'⏣',torus:'◎'} as Record<string,string>)[shape.type] }</span>
               <span class="shape-auto-name">
-                { ({rect:'Rect',ellipse:'Ellipse',arc:'Arc',line:'Line',curve:'Curve',triangle:'Triangle',spline:'Spline'} as Record<string,string>)[shape.type] } {i + 1}
+                { ({rect:'Rect',ellipse:'Ellipse',arc:'Arc',line:'Line',curve:'Curve',triangle:'Triangle',spline:'Spline',cube:'Cube',sphere:'Sphere',cylinder:'Cylinder',torus:'Torus'} as Record<string,string>)[shape.type] } {i + 1}
               </span>
               {#if !isCodeMode}
                 <button

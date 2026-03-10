@@ -7,6 +7,10 @@
     theme,
     onSizeChange,
     onExport,
+    exportScale,
+    exportFormat,
+    onSetExportScale,
+    onSetExportFormat,
     onSave,
     onLoad,
     onNew,
@@ -17,6 +21,10 @@
     theme: 'dark' | 'light'
     onSizeChange: (w: number, h: number) => void
     onExport: () => void
+    exportScale: number
+    exportFormat: 'png' | 'cmyk-tiff'
+    onSetExportScale: (s: number) => void
+    onSetExportFormat: (f: 'png' | 'cmyk-tiff') => void
     onSave: () => void
     onLoad: (file: File) => void
     onNew: () => void
@@ -85,6 +93,15 @@
   }
 
   const isPreset = $derived(PRESETS.some(p => p.w === artW && p.h === artH))
+
+  // ── Export settings ──────────────────────────────────────────────────────
+  const EXPORT_SCALES = [0.5, 1, 1.5, 2, 3, 4, 6, 8]
+  const EXPORT_FORMATS: { value: 'png' | 'cmyk-tiff'; label: string }[] = [
+    { value: 'png', label: 'PNG (RGB)' },
+    { value: 'cmyk-tiff', label: 'TIFF (CMYK)' },
+  ]
+  const formatLabel = $derived(exportFormat === 'cmyk-tiff' ? 'TIFF' : 'PNG')
+  let showExportMenu = $state(false)
 </script>
 
 <header class="topbar">
@@ -150,7 +167,36 @@
     <button class="file-btn theme-btn" onclick={onToggleTheme} title="Toggle light/dark theme">{theme === 'dark' ? '◑' : '◐'}</button>
   </div>
 
-  <button class="export-btn" onclick={onExport}>Export PNG</button>
+  <div class="export-wrap">
+    <button class="export-btn" onclick={onExport}>Export {formatLabel} {exportScale}x</button>
+    <button class="export-arrow" onclick={() => showExportMenu = !showExportMenu}>▾</button>
+    {#if showExportMenu}
+      <div class="export-dropdown">
+        <div class="export-section-label">Format</div>
+        {#each EXPORT_FORMATS as f}
+          <button
+            class="export-option"
+            class:active={exportFormat === f.value}
+            onclick={() => onSetExportFormat(f.value)}
+          >
+            <span>{f.label}</span>
+          </button>
+        {/each}
+        <div class="export-divider"></div>
+        <div class="export-section-label">Resolution</div>
+        {#each EXPORT_SCALES as s}
+          <button
+            class="export-option"
+            class:active={exportScale === s}
+            onclick={() => onSetExportScale(s)}
+          >
+            <span>{s}x</span>
+            <span class="export-dim">{artW * s} × {artH * s}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </div>
 </header>
 
 <!-- hidden file input -->
@@ -162,7 +208,12 @@
   onchange={onFileChange}
 />
 
-<!-- close presets on outside click -->
+<!-- close dropdowns on outside click -->
+{#if showExportMenu}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="overlay" onclick={() => showExportMenu = false}></div>
+{/if}
 {#if showPresets}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -339,18 +390,91 @@
 
   .theme-btn { font-size: 14px; padding: 5px 8px; }
 
+  .export-wrap {
+    position: relative;
+    display: flex;
+    flex-shrink: 0;
+  }
+
   .export-btn {
     background: none;
     border: 1px solid var(--border);
+    border-right: none;
     color: var(--text-2);
     font-size: 12px;
     padding: 5px 12px;
-    border-radius: 5px;
+    border-radius: 5px 0 0 5px;
     cursor: pointer;
-    flex-shrink: 0;
     transition: border-color .15s, color .15s;
   }
   .export-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .export-arrow {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-6);
+    font-size: 10px;
+    width: 22px;
+    border-radius: 0 5px 5px 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color .12s, color .12s;
+  }
+  .export-arrow:hover { border-color: var(--accent); color: var(--accent); }
+
+  .export-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    z-index: 200;
+    min-width: 180px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  .export-option {
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--text-2);
+    font-size: 12px;
+    padding: 8px 12px;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    transition: background .1s;
+  }
+  .export-option:hover { background: var(--bg-hover); color: var(--text-1); }
+  .export-option.active { color: var(--accent); }
+
+  .export-dim {
+    font-family: monospace;
+    font-size: 10px;
+    opacity: .45;
+  }
+
+  .export-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-6);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    padding: 6px 12px 2px;
+  }
+
+  .export-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+  }
 
   .overlay {
     position: fixed;
