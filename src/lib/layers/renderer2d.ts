@@ -166,7 +166,9 @@ let _warpCtx: CanvasRenderingContext2D | null = null
 function getWarpCtx(physW: number, physH: number): CanvasRenderingContext2D {
   if (!_warpCanvas) {
     _warpCanvas = document.createElement('canvas')
-    _warpCtx    = _warpCanvas.getContext('2d')!
+    // willReadFrequently tells Firefox to use a software-backed canvas,
+    // avoiding GPU→CPU readback delays that can drop the first frame.
+    _warpCtx    = _warpCanvas.getContext('2d', { willReadFrequently: true })!
   }
   if (_warpCanvas.width !== physW || _warpCanvas.height !== physH) {
     _warpCanvas.width  = physW

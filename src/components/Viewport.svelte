@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { clientToNorm } from '../lib/layers/renderer2d'
   import type { Shape, ShapeGeom } from '../lib/layers/types'
   import { MIN_ZOOM, MAX_ZOOM } from '../lib/viewport'
+
+  const RULER_SIZE = 22  // px width/height of ruler bars
 
   const {
     artW,
@@ -48,6 +50,8 @@
   let viewportEl: HTMLDivElement
   let artboardHost: HTMLDivElement
   let canvas2dEl: HTMLCanvasElement
+  let rulerH: HTMLCanvasElement   // horizontal (top)
+  let rulerV: HTMLCanvasElement   // vertical (left)
 
   // Space+drag (pan) state
   let spaceHeld  = false
