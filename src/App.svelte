@@ -177,11 +177,6 @@
   let selectedShapeIds = $state<string[]>([])
   let activeTab = $state<'layers' | 'effects' | 'palettes' | 'samples'>('layers')
 
-  // Snapshot of shapes when transitioning code→manual, keyed by layer id.
-  // Used to detect whether the user modified shapes in manual mode so we know
-  // whether to regenerate code or keep the original query on manual→code.
-  const _codeSnapshots = new Map<string, string>()
-
   // ── Palettes ───────────────────────────────────────────────────────────────
   let customPalettes = $state<Palette[]>(_saved?.customPalettes ?? [])
 
@@ -232,7 +227,6 @@
 
   function handleDeleteLayer(id: string) {
     commit()
-    _codeSnapshots.delete(id)
     layers = layers.filter(l => l.id !== id)
     if (activeLayerId === id) {
       activeLayerId = layers[layers.length - 1]?.id ?? null
@@ -273,39 +267,24 @@
   }
 
   // Switch mode with bidirectional sync:
-  //   code → manual: bake evaluated shapes, snapshot them for later diff
-  //   manual → code: if shapes changed from snapshot, regenerate code;
-  //                   otherwise keep original query (preserves loops/variables)
+  //   code → manual: evaluate query, bake shapes into layer.shapes
+  //   manual → code: always regenerate query from current shapes
   function handleSetMode(id: string, mode: 'manual' | 'code') {
     commit()
     layers = layers.map(l => {
       if (l.id !== id || l.mode === mode) return l
       if (mode === 'code') {
-        // Compare current shapes to the snapshot taken when we entered manual
-        const snap = _codeSnapshots.get(id)
-        const currentJson = JSON.stringify(stripIds(l.shapes))
-        const shapesChanged = !snap || snap !== currentJson
-        const query = shapesChanged ? shapesToCode(l.shapes) : l.query
-        _codeSnapshots.delete(id)
+        // Always regenerate code from current manual shapes so edits are never lost
+        const query = shapesToCode(l.shapes)
         return { ...l, mode, query }
       } else {
-        // code → manual: evaluate, bake, and snapshot
+        // code → manual: evaluate query and bake into layer.shapes
         const raw = l.query.trim() ? evaluateQuery(l.query, artW, artH, allPalettes).shapes : l.shapes
-        const baked = flattenShapes(raw)
-        _codeSnapshots.set(id, JSON.stringify(stripIds(baked)))
-        return { ...l, mode, shapes: baked }
+        return { ...l, mode, shapes: flattenShapes(raw) }
       }
     })
     activeShapeId = null
     selectedShapeIds = []
-  }
-
-  /** Strip shape ids for comparison (ids are random, content is what matters). */
-  function stripIds(shapes: Shape[]): unknown[] {
-    return shapes.map(({ id, children, ...rest }) => ({
-      ...rest,
-      ...(children?.length ? { children: stripIds(children) } : {}),
-    }))
   }
 
   // Commit once per drag (tracked by shape id to avoid committing on every mousemove)
@@ -597,7 +576,6 @@
     activeShapeId = null
     selectedShapeIds = []
     past = []; future = []
-    _codeSnapshots.clear()
   }
 
   // ── Save / Load ────────────────────────────────────────────────────────────
