@@ -4,6 +4,30 @@
   import { renderLayers2D, applyTransform } from './lib/layers/renderer2d'
   import { evaluateQuery, shapesToCode } from './lib/query/index'
 
+  /** Recursively flatten group shapes into their children (for manual mode). */
+  function flattenShapes(shapes: Shape[]): Shape[] {
+    const out: Shape[] = []
+    for (const s of shapes) {
+      if (s.type === 'group' && s.children?.length) {
+        // Merge group effects into each child, then flatten recursively
+        const gfx = s.effects ?? []
+        for (const child of s.children) {
+          const merged = gfx.length
+            ? { ...child, effects: [...(child.effects ?? []), ...gfx] }
+            : child
+          if (merged.type === 'group' && merged.children?.length) {
+            out.push(...flattenShapes([merged]))
+          } else {
+            out.push(merged)
+          }
+        }
+      } else {
+        out.push(s)
+      }
+    }
+    return out
+  }
+
   import { initEditorFont } from './lib/editor-font'
   initEditorFont()
 
@@ -253,8 +277,8 @@
         const query = l.query.trim() ? l.query : shapesToCode(l.shapes)
         return { ...l, mode, query }
       } else {
-        const shapes = l.query.trim() ? evaluateQuery(l.query, artW, artH, allPalettes).shapes : l.shapes
-        return { ...l, mode, shapes }
+        const raw = l.query.trim() ? evaluateQuery(l.query, artW, artH, allPalettes).shapes : l.shapes
+        return { ...l, mode, shapes: flattenShapes(raw) }
       }
     })
     activeShapeId = null
@@ -436,7 +460,9 @@
         canvas2d.height = h
       }
       ctx2d.setTransform(renderScale, 0, 0, renderScale, 0, 0)
-      renderLayers2D(ctx2d, resolvedLayers, artW, artH)
+      try {
+        renderLayers2D(ctx2d, resolvedLayers, artW, artH)
+      } catch { /* don't let a bad frame kill the render loop */ }
       drawSelectionOutline(ctx2d)
     }
     rafId = requestAnimationFrame(loop)

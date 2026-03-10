@@ -2,11 +2,12 @@ import type { Gradient, Layer, ShapeEffect, ShapeTransform } from './types'
 
 // ── Gradient helpers ──────────────────────────────────────────────────────────
 
-function hexToRgba(hex: string, opacity: number): string {
+function hexToRgba(hex: unknown, opacity: number): string {
+  if (typeof hex !== 'string') return `rgba(0,0,0,${opacity})`
   const c = hex.replace('#', '')
-  const r = parseInt(c.slice(0, 2), 16)
-  const g = parseInt(c.slice(2, 4), 16)
-  const b = parseInt(c.slice(4, 6), 16)
+  const r = parseInt(c.slice(0, 2), 16) || 0
+  const g = parseInt(c.slice(2, 4), 16) || 0
+  const b = parseInt(c.slice(4, 6), 16) || 0
   return `rgba(${r},${g},${b},${opacity})`
 }
 

@@ -267,11 +267,10 @@
     if (e.code === 'Space') spaceHeld = false
   }
 
-  /** Pick a nice tick interval for rulers based on zoom level */
-  function rulerStep(zoom: number): number {
-    const pxPerUnit = zoom  // 1 artboard-px = `zoom` screen-px
+  /** Pick a nice tick interval for rulers in normalized (0–1) coords */
+  function rulerStep(screenPxPerNorm: number): number {
     // We want ticks roughly every 60-120 screen-px apart
-    const raw = 80 / pxPerUnit
+    const raw = 80 / screenPxPerNorm
     const mag = Math.pow(10, Math.floor(Math.log10(raw)))
     const norm = raw / mag
     if (norm < 2) return mag * 1
@@ -305,17 +304,19 @@
 
     // Artboard left edge in viewport screen coords, offset by ruler bar
     const artScreenLeft = vpW / 2 + panX - (artW / 2) * zoom - RULER_SIZE
-    const step = rulerStep(zoom)
-    const startPx = Math.floor(-artScreenLeft / (zoom * step)) * step
-    const endPx   = Math.ceil((hRulerW - artScreenLeft) / (zoom * step)) * step
+    // 1 normalized unit = artW artboard-px = artW * zoom screen-px
+    const screenPxPerNorm = artW * zoom
+    const step = rulerStep(screenPxPerNorm)
+    const startN = Math.floor(-artScreenLeft / (screenPxPerNorm * step)) * step
+    const endN   = Math.ceil((hRulerW - artScreenLeft) / (screenPxPerNorm * step)) * step
 
     hCtx.fillStyle = textColor
     hCtx.font = '11px system-ui, sans-serif'
     hCtx.textAlign = 'center'
     hCtx.textBaseline = 'top'
 
-    for (let px = startPx; px <= endPx; px += step) {
-      const sx = artScreenLeft + px * zoom
+    for (let n = startN; n <= endN; n += step) {
+      const sx = artScreenLeft + n * screenPxPerNorm
       if (sx < 0 || sx > hRulerW) continue
 
       // Major tick
@@ -326,13 +327,15 @@
       hCtx.lineWidth = 1
       hCtx.stroke()
 
-      hCtx.fillText(String(Math.round(px)), sx, 3)
+      // Format: show up to 2 decimals, strip trailing zeros
+      const label = parseFloat(n.toFixed(2)).toString()
+      hCtx.fillText(label, sx, 3)
 
       // Minor ticks (5 subdivisions)
       const minor = step / 5
-      if (minor * zoom >= 4) { // only show if at least 4px apart
+      if (minor * screenPxPerNorm >= 4) { // only show if at least 4px apart
         for (let m = 1; m < 5; m++) {
-          const mx = artScreenLeft + (px + m * minor) * zoom
+          const mx = artScreenLeft + (n + m * minor) * screenPxPerNorm
           if (mx < 0 || mx > hRulerW) continue
           hCtx.beginPath()
           hCtx.moveTo(mx, RULER_SIZE - 4)
@@ -355,17 +358,19 @@
     vCtx.fillRect(0, 0, RULER_SIZE, vRulerH)
 
     const artScreenTop = vpH / 2 + panY - (artH / 2) * zoom - RULER_SIZE
-    const vStep = rulerStep(zoom)
-    const vStart = Math.floor(-artScreenTop / (zoom * vStep)) * vStep
-    const vEnd   = Math.ceil((vRulerH - artScreenTop) / (zoom * vStep)) * vStep
+    // 1 normalized unit = artH artboard-px = artH * zoom screen-px
+    const vScreenPxPerNorm = artH * zoom
+    const vStep = rulerStep(vScreenPxPerNorm)
+    const vStart = Math.floor(-artScreenTop / (vScreenPxPerNorm * vStep)) * vStep
+    const vEnd   = Math.ceil((vRulerH - artScreenTop) / (vScreenPxPerNorm * vStep)) * vStep
 
     vCtx.fillStyle = textColor
     vCtx.font = '11px system-ui, sans-serif'
     vCtx.textAlign = 'center'
     vCtx.textBaseline = 'bottom'
 
-    for (let py = vStart; py <= vEnd; py += vStep) {
-      const sy = artScreenTop + py * zoom
+    for (let n = vStart; n <= vEnd; n += vStep) {
+      const sy = artScreenTop + n * vScreenPxPerNorm
       if (sy < 0 || sy > vRulerH) continue
 
       vCtx.strokeStyle = lineColor
@@ -375,18 +380,19 @@
       vCtx.lineWidth = 1
       vCtx.stroke()
 
+      const label = parseFloat(n.toFixed(2)).toString()
       vCtx.save()
       vCtx.translate(RULER_SIZE / 2, sy - 3)
       vCtx.rotate(-Math.PI / 2)
       vCtx.textAlign = 'left'
       vCtx.textBaseline = 'middle'
-      vCtx.fillText(String(Math.round(py)), 0, 0)
+      vCtx.fillText(label, 0, 0)
       vCtx.restore()
 
       const vMinor = vStep / 5
-      if (vMinor * zoom >= 4) {
+      if (vMinor * vScreenPxPerNorm >= 4) {
         for (let m = 1; m < 5; m++) {
-          const my = artScreenTop + (py + m * vMinor) * zoom
+          const my = artScreenTop + (n + m * vMinor) * vScreenPxPerNorm
           if (my < 0 || my > vRulerH) continue
           vCtx.beginPath()
           vCtx.moveTo(RULER_SIZE - 4, my)
