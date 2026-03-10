@@ -304,7 +304,6 @@
 
     // Artboard left edge in viewport screen coords, offset by ruler bar
     const artScreenLeft = vpW / 2 + panX - (artW / 2) * zoom - RULER_SIZE
-    // 1 normalized unit = artW artboard-px = artW * zoom screen-px
     const screenPxPerNorm = artW * zoom
     const step = rulerStep(screenPxPerNorm)
     const startN = Math.floor(-artScreenLeft / (screenPxPerNorm * step)) * step
@@ -327,13 +326,12 @@
       hCtx.lineWidth = 1
       hCtx.stroke()
 
-      // Format: show up to 2 decimals, strip trailing zeros
       const label = parseFloat(n.toFixed(2)).toString()
       hCtx.fillText(label, sx, 3)
 
       // Minor ticks (5 subdivisions)
       const minor = step / 5
-      if (minor * screenPxPerNorm >= 4) { // only show if at least 4px apart
+      if (minor * screenPxPerNorm >= 4) {
         for (let m = 1; m < 5; m++) {
           const mx = artScreenLeft + (n + m * minor) * screenPxPerNorm
           if (mx < 0 || mx > hRulerW) continue
@@ -358,7 +356,6 @@
     vCtx.fillRect(0, 0, RULER_SIZE, vRulerH)
 
     const artScreenTop = vpH / 2 + panY - (artH / 2) * zoom - RULER_SIZE
-    // 1 normalized unit = artH artboard-px = artH * zoom screen-px
     const vScreenPxPerNorm = artH * zoom
     const vStep = rulerStep(vScreenPxPerNorm)
     const vStart = Math.floor(-artScreenTop / (vScreenPxPerNorm * vStep)) * vStep
