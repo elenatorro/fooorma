@@ -177,6 +177,11 @@
   let selectedShapeIds = $state<string[]>([])
   let activeTab = $state<'layers' | 'effects' | 'palettes' | 'samples'>('layers')
 
+  // Snapshot of shapes when transitioning code→manual, keyed by layer id.
+  // Used to detect whether the user modified shapes in manual mode so we know
+  // whether to regenerate code or keep the original query on manual→code.
+  const _codeSnapshots = new Map<string, string>()
+
   // ── Palettes ───────────────────────────────────────────────────────────────
   let customPalettes = $state<Palette[]>(_saved?.customPalettes ?? [])
 
@@ -227,6 +232,7 @@
 
   function handleDeleteLayer(id: string) {
     commit()
+    _codeSnapshots.delete(id)
     layers = layers.filter(l => l.id !== id)
     if (activeLayerId === id) {
       activeLayerId = layers[layers.length - 1]?.id ?? null
@@ -267,22 +273,39 @@
   }
 
   // Switch mode with bidirectional sync:
-  //   manual → code: generate code from shapes if query is empty
-  //   code → manual: bake evaluated shapes into layer.shapes
+  //   code → manual: bake evaluated shapes, snapshot them for later diff
+  //   manual → code: if shapes changed from snapshot, regenerate code;
+  //                   otherwise keep original query (preserves loops/variables)
   function handleSetMode(id: string, mode: 'manual' | 'code') {
     commit()
     layers = layers.map(l => {
       if (l.id !== id || l.mode === mode) return l
       if (mode === 'code') {
-        const query = l.query.trim() ? l.query : shapesToCode(l.shapes)
+        // Compare current shapes to the snapshot taken when we entered manual
+        const snap = _codeSnapshots.get(id)
+        const currentJson = JSON.stringify(stripIds(l.shapes))
+        const shapesChanged = !snap || snap !== currentJson
+        const query = shapesChanged ? shapesToCode(l.shapes) : l.query
+        _codeSnapshots.delete(id)
         return { ...l, mode, query }
       } else {
+        // code → manual: evaluate, bake, and snapshot
         const raw = l.query.trim() ? evaluateQuery(l.query, artW, artH, allPalettes).shapes : l.shapes
-        return { ...l, mode, shapes: flattenShapes(raw) }
+        const baked = flattenShapes(raw)
+        _codeSnapshots.set(id, JSON.stringify(stripIds(baked)))
+        return { ...l, mode, shapes: baked }
       }
     })
     activeShapeId = null
     selectedShapeIds = []
+  }
+
+  /** Strip shape ids for comparison (ids are random, content is what matters). */
+  function stripIds(shapes: Shape[]): unknown[] {
+    return shapes.map(({ id, children, ...rest }) => ({
+      ...rest,
+      ...(children?.length ? { children: stripIds(children) } : {}),
+    }))
   }
 
   // Commit once per drag (tracked by shape id to avoid committing on every mousemove)
@@ -570,6 +593,7 @@
     activeShapeId = null
     selectedShapeIds = []
     past = []; future = []
+    _codeSnapshots.clear()
   }
 
   // ── Save / Load ────────────────────────────────────────────────────────────
