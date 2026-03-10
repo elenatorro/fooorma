@@ -11,6 +11,8 @@ export const API_SNIPPETS: ApiSnippet[] = [
   { name: 'beginSpline', sig: '—',                                                   code: "beginSpline()\nrepeat(20, (i, t) => {\n  vertex(t, 0.3 + nz(t * 4) * 0.4)\n})\nendSpline('#8b5cf6', 0.85)" },
   { name: 'vertex',      sig: 'x, y',                                                code: "vertex(0.5, 0.3)" },
   { name: 'endSpline',   sig: 'color?, opacity?, width?',                            code: "endSpline('#8b5cf6', 0.85, 0.006)" },
+  { name: 'beginGroup', sig: '...effects',                                       code: "beginGroup(warp(10, 0.03))\nrepeat(8, (i, t) => {\n  rect(t, 0.5, 0.1, 0.1, '#8b5cf6', 0.85)\n})\nendGroup()" },
+  { name: 'endGroup',   sig: '—',                                                code: "endGroup()" },
   { name: 'nz',         sig: 'x, y? → 0..1',                                       code: "beginSpline()\nrepeat(20, (i, t) => {\n  vertex(t, 0.3 + nz(t * 4) * 0.4)\n})\nendSpline('#8b5cf6', 0.85)" },
   { name: 'stroke',     sig: 'hex, opacity?, width?, align?, join?',                 code: "stroke('#000000', 1, 0.005)" },
   { name: 'rotate',     sig: 'deg',                                                  code: "rotate(45)" },

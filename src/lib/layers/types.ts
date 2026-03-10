@@ -1,4 +1,4 @@
-export type ShapeType = 'rect' | 'ellipse' | 'line' | 'curve' | 'triangle' | 'arc' | 'spline'
+export type ShapeType = 'rect' | 'ellipse' | 'line' | 'curve' | 'triangle' | 'arc' | 'spline' | 'group'
 
 export interface ColorStop    { hex: string; opacity: number; pos: number }
 export interface LinearGradient { type: 'linear'; angle: number; stops: ColorStop[] }
@@ -51,6 +51,7 @@ export interface Shape {
   strokeWidth?: number   // artW-fraction; used by line and curve
   transform?: ShapeTransform
   effects?: ShapeEffect[]
+  children?: Shape[]         // only for type === 'group'
 }
 
 export interface Layer {

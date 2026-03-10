@@ -76,7 +76,14 @@ export function shapesToCode(shapes: Shape[]): string {
     }
   }
 
-  return shapes.map(({ type, geom: { x, y, w, h }, color, stroke, pts, strokeWidth, transform, effects }) => {
+  return shapes.map(({ type, geom: { x, y, w, h }, color, stroke, pts, strokeWidth, transform, effects, children }) => {
+    // Serialize group shapes
+    if (type === 'group' && children?.length) {
+      const efx = effects?.length ? effects.map(effectStr).join(', ') : ''
+      const inner = shapesToCode(children).split('\n').map(l => '  ' + l).join('\n')
+      return `beginGroup(${efx})\n${inner}\nendGroup()`
+    }
+
     const { hex, opacity, gradient } = color
     const colorArg = gradient ? gradStr(gradient) : `'${hex}'`
     const opArg    = gradient ? '1' : String(f(opacity))
@@ -212,6 +219,35 @@ export function evaluateQuery(
 
   const warp = (amount = 8, freq = 0.05): ShapeEffect =>
     ({ type: 'warp', amount, freq })
+
+  // ── Group stack ─────────────────────────────────────────────────────────
+  // beginGroup(...effects) captures all shapes created until endGroup()
+  // and wraps them in a single 'group' shape with those effects applied
+  // to the composite.
+  interface GroupFrame { startIdx: number; effects: ShapeEffect[] }
+  const _groupStack: GroupFrame[] = []
+
+  const beginGroup = (...args: unknown[]): void => {
+    const effects: ShapeEffect[] = []
+    for (const a of args) { if (isEffect(a)) effects.push(a as ShapeEffect) }
+    _groupStack.push({ startIdx: shapes.length, effects })
+  }
+
+  const endGroup = (): void => {
+    const frame = _groupStack.pop()
+    if (!frame) return
+    const children = shapes.splice(frame.startIdx)
+    if (children.length === 0) return
+    const group: Shape = {
+      id: crypto.randomUUID(),
+      type: 'group',
+      color: { hex: '#000000', opacity: 0 },
+      geom: { x: 0, y: 0, w: 0, h: 0 },
+      effects: frame.effects,
+      children,
+    }
+    shapes.push(group)
+  }
 
   // ── Drawing primitives ────────────────────────────────────────────────────
   function makeShape(
@@ -434,6 +470,7 @@ export function evaluateQuery(
   try {
     new Function(
       'rect', 'ellipse', 'arc', 'line', 'curve', 'triangle', 'spline', 'beginSpline', 'vertex', 'endSpline',
+      'beginGroup', 'endGroup',
       'stroke', 'rotate', 'transform',
       'shadow', 'blur', 'bevel', 'noise', 'warp',
       'repeat', 'grid', 'wave', 'circular',
@@ -446,6 +483,7 @@ export function evaluateQuery(
       code,
     )(
       rect, ellipse, arc, line, curve, triangle, spline, beginSpline, vertex, endSpline,
+      beginGroup, endGroup,
       mkStroke, rotate, transform,
       shadow, blur, bevel, noise, warp,
       repeat, grid, wave, circular,

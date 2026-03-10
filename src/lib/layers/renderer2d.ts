@@ -175,6 +175,28 @@ function getWarpCtx(physW: number, physH: number): CanvasRenderingContext2D {
   return _warpCtx!
 }
 
+// ── Group renderer ────────────────────────────────────────────────────────────
+// Flattens group effects into each child shape and renders directly.
+// This avoids offscreen canvas issues and works for all effect types.
+// Warp is applied per-shape (not as a true composite warp).
+
+function flattenGroupShapes(children: import('./types').Shape[], groupEffects: import('./types').ShapeEffect[]): import('./types').Shape[] {
+  if (groupEffects.length === 0) return children
+  return children.map(child => {
+    if (child.type === 'group' && child.children?.length) {
+      // Nested group: merge effects downward
+      return {
+        ...child,
+        effects: [...(child.effects ?? []), ...groupEffects],
+      }
+    }
+    return {
+      ...child,
+      effects: [...(child.effects ?? []), ...groupEffects],
+    }
+  })
+}
+
 // ── Main renderer ─────────────────────────────────────────────────────────────
 
 export function renderLayers2D(
@@ -199,6 +221,18 @@ export function renderLayers2D(
     }
 
     for (const shape of layer.shapes) {
+      // ── Group: flatten effects into children and render directly ──
+      if (shape.type === 'group' && shape.children?.length) {
+        const groupEffects = shape.effects ?? []
+        const flattened = flattenGroupShapes(shape.children, groupEffects)
+        const tmpLayer: Layer = {
+          id: '_group_tmp', name: '', visible: true, mode: 'manual',
+          shapes: flattened, query: '',
+        }
+        renderLayers2D(ctx, [tmpLayer], artW, artH, false)
+        continue
+      }
+
       const { type, color, geom, stroke, effects } = shape
 
       const px   = geom.x * artW

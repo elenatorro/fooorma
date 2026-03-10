@@ -627,7 +627,7 @@
             const existing = activeLayer.query.trimEnd()
             onSetQuery(activeLayer.id, existing ? existing + '\n' + buildTemplate() : buildTemplate())
           }}
-        >→ Insert code</button>
+        >Insert code</button>
       </section>
     {/if}
 
