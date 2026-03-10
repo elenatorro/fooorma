@@ -321,12 +321,29 @@
     activeShapeId = shapeId
   }
 
-  function handleSelectShape(shapeId: string) {
+  function handleSelectShape(shapeId: string, layerId?: string) {
+    if (layerId && layerId !== activeLayerId) {
+      // Switch to the layer containing the clicked shape
+      const layer = layers.find(l => l.id === layerId)
+      if (layer && layer.mode !== 'code') {
+        activeLayerId = layerId
+      }
+    }
     activeShapeId = shapeId
     selectedShapeIds = [shapeId]
   }
 
-  function handleToggleShape(shapeId: string) {
+  function handleToggleShape(shapeId: string, layerId?: string) {
+    if (layerId && layerId !== activeLayerId) {
+      // Cross-layer toggle: switch layer and start fresh selection
+      const layer = layers.find(l => l.id === layerId)
+      if (layer && layer.mode !== 'code') {
+        activeLayerId = layerId
+        activeShapeId = shapeId
+        selectedShapeIds = [shapeId]
+        return
+      }
+    }
     if (selectedShapeIds.includes(shapeId)) {
       selectedShapeIds = selectedShapeIds.filter(id => id !== shapeId)
       if (activeShapeId === shapeId) {
@@ -430,6 +447,15 @@
   let canvas2d: HTMLCanvasElement | null = null
   let ctx2d: CanvasRenderingContext2D | null = null
   let rafId: number
+  let dirty = true
+
+  function markDirty() { dirty = true }
+
+  // Mark dirty whenever anything that affects rendering changes
+  $effect(() => {
+    void resolvedLayers; void artW; void artH; void zoom; void selectedShapeIds
+    dirty = true
+  })
 
   function initCanvas2D(c: HTMLCanvasElement) {
     canvas2d = c
@@ -445,7 +471,8 @@
   }
 
   function loop(time: number) {
-    if (ctx2d && canvas2d) {
+    if (dirty && ctx2d && canvas2d) {
+      dirty = false
       // Scale canvas buffer to match physical pixels at current zoom,
       // so shapes stay crisp regardless of zoom level.
       // renderScale is capped to MAX_RENDER_SCALE to prevent the canvas bitmap
@@ -718,13 +745,14 @@
   {panY}
   activeLayerId={drawableLayerId}
   {activeLayerShapes}
+  {resolvedLayers}
   {selectedShapeIds}
   onCanvas2d={initCanvas2D}
   onZoomChange={(z, px, py) => { zoom = z; panX = px; panY = py }}
   onPanChange={(px, py) => { panX = px; panY = py }}
   onStartDraw={handleStartDraw}
-  onSelectShape={handleSelectShape}
-  onToggleShape={handleToggleShape}
+  onSelectShape={(id, layerId) => handleSelectShape(id, layerId)}
+  onToggleShape={(id, layerId) => handleToggleShape(id, layerId)}
   onDeselect={() => { activeShapeId = null; selectedShapeIds = [] }}
   onUpdateGeom={handleUpdateGeom}
   onMoveBatch={handleMoveBatch}

@@ -34,15 +34,23 @@ export function shapesToCode(shapes: Shape[]): string {
     return s + ')'
   }
 
-  function transformStr(t: ShapeTransform): string {
-    const keys = (Object.keys(t) as (keyof ShapeTransform)[]).filter(k => t[k] !== undefined)
-    if (keys.length === 1 && t.rotate !== undefined) return `rotate(${f(t.rotate)})`
+  function transformStr(t: ShapeTransform, is3D = false): string {
+    // For non-3D, filter out 3D-only keys with default values
     const parts: string[] = []
-    if (t.rotate  !== undefined) parts.push(`rotate: ${f(t.rotate)}`)
-    if (t.scaleX  !== undefined) parts.push(`scaleX: ${f(t.scaleX)}`)
-    if (t.scaleY  !== undefined) parts.push(`scaleY: ${f(t.scaleY)}`)
-    if (t.skewX   !== undefined) parts.push(`skewX: ${f(t.skewX)}`)
-    if (t.skewY   !== undefined) parts.push(`skewY: ${f(t.skewY)}`)
+    if (t.rotate   !== undefined) parts.push(`rotate: ${f(t.rotate)}`)
+    if (t.scaleX   !== undefined) parts.push(`scaleX: ${f(t.scaleX)}`)
+    if (t.scaleY   !== undefined) parts.push(`scaleY: ${f(t.scaleY)}`)
+    if (t.skewX    !== undefined) parts.push(`skewX: ${f(t.skewX)}`)
+    if (t.skewY    !== undefined) parts.push(`skewY: ${f(t.skewY)}`)
+    // 3D properties
+    if (t.rotateX  !== undefined && t.rotateX  !== 35)        parts.push(`rotateX: ${f(t.rotateX)}`)
+    if (t.rotateY  !== undefined && t.rotateY  !== 45)        parts.push(`rotateY: ${f(t.rotateY)}`)
+    if (t.rotateZ  !== undefined && t.rotateZ  !== 0)         parts.push(`rotateZ: ${f(t.rotateZ)}`)
+    if (t.depth    !== undefined && t.depth    !== 0)         parts.push(`depth: ${f(t.depth)}`)
+    if (t.smooth   !== undefined && t.smooth   !== 32)        parts.push(`smooth: ${f(t.smooth)}`)
+    // Simple rotate shorthand only for 2D shapes
+    if (!is3D && parts.length === 1 && t.rotate !== undefined) return `rotate(${f(t.rotate)})`
+    if (parts.length === 0) return ''
     return `transform({ ${parts.join(', ')} })`
   }
 
@@ -73,6 +81,14 @@ export function shapesToCode(shapes: Shape[]): string {
         if (freq === 0.05) return `warp(${f(amt)})`
         return `warp(${f(amt)}, ${f(freq)})`
       }
+      case 'material': {
+        const mk = e.material ?? 'default'
+        const mr = e.roughness ?? 0.5
+        const mi = e.intensity ?? 0.5
+        if (mr === 0.5 && mi === 0.5) return `material('${mk}')`
+        if (mi === 0.5) return `material('${mk}', ${f(mr)})`
+        return `material('${mk}', ${f(mr)}, ${f(mi)})`
+      }
     }
   }
 
@@ -84,11 +100,22 @@ export function shapesToCode(shapes: Shape[]): string {
       return `beginGroup(${efx})\n${inner}\nendGroup()`
     }
 
+    const is3D = type === 'cube' || type === 'sphere' || type === 'cylinder' || type === 'torus'
     const { hex, opacity, gradient } = color
     const colorArg = gradient ? gradStr(gradient) : `'${hex}'`
     const opArg    = gradient ? '1' : String(f(opacity))
-    const tr  = transform ? `, ${transformStr(transform)}` : ''
+    const trCode = transform ? transformStr(transform, is3D) : ''
+    const tr  = trCode ? `, ${trCode}` : ''
     const efx = effects?.length ? ', ' + effects.map(effectStr).join(', ') : ''
+    // 3D shapes: cube(x, y, size), sphere(x, y, size), cylinder(x, y, w, h), torus(x, y, size)
+    if (type === 'cube' || type === 'sphere' || type === 'torus') {
+      const sk = stroke ? `, ${strokeStr(stroke)}` : ''
+      return `${type}(${f(x)}, ${f(y)}, ${f(w)}, ${colorArg}, ${opArg}${sk}${tr}${efx})`
+    }
+    if (type === 'cylinder') {
+      const sk = stroke ? `, ${strokeStr(stroke)}` : ''
+      return `cylinder(${f(x)}, ${f(y)}, ${f(w)}, ${f(h)}, ${colorArg}, ${opArg}${sk}${tr}${efx})`
+    }
     if (type === 'spline' && pts) {
       const ptsArg = `[${pts.map(f).join(', ')}]`
       const sw = strokeWidth !== undefined ? `, ${f(strokeWidth)}` : ''
@@ -150,15 +177,18 @@ export function evaluateQuery(
     ({ type: 'radial', cx: 0.5, cy: 0.5, stops: parseStops(args) })
 
   // ── Type guards ───────────────────────────────────────────────────────────
+  const TRANSFORM_KEYS = new Set(['rotate', 'scaleX', 'scaleY', 'skewX', 'skewY', 'rotateX', 'rotateY', 'rotateZ', 'depth', 'smooth'])
+
   function isTransform(v: unknown): v is ShapeTransform {
-    return typeof v === 'object' && v !== null && !Array.isArray(v) &&
-      !('width' in v) && !('stops' in v) && !('hex' in v) && !('type' in v) &&
-      ('rotate' in v || 'scaleX' in v || 'scaleY' in v || 'skewX' in v || 'skewY' in v)
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
+    if ('width' in v || 'stops' in v || 'hex' in v || 'type' in v) return false
+    const keys = Object.keys(v)
+    return keys.length > 0 && keys.some(k => TRANSFORM_KEYS.has(k))
   }
 
   function isEffect(v: unknown): v is ShapeEffect {
     return typeof v === 'object' && v !== null && 'type' in v &&
-      ['shadow', 'blur', 'bevel', 'noise', 'warp'].includes((v as ShapeEffect).type)
+      ['shadow', 'blur', 'bevel', 'noise', 'warp', 'material'].includes((v as ShapeEffect).type)
   }
 
   /** Scan trailing args and sort into stroke, transform, and effects buckets. */
@@ -170,8 +200,8 @@ export function evaluateQuery(
       const arg = trailing[i]
       if (arg === null || arg === undefined) continue
       if (typeof arg === 'object') {
-        if (isEffect(arg))     effects.push(arg as ShapeEffect)
-        else if (isTransform(arg)) xform = arg as ShapeTransform
+        if (isEffect(arg))          effects.push(arg as ShapeEffect)
+        else if (isTransform(arg))  xform = xform ? { ...xform, ...(arg as ShapeTransform) } : arg as ShapeTransform
         else if ('width' in (arg as object)) stroke = arg as ShapeStroke
       } else if (typeof arg === 'string') {
         // Legacy positional stroke: hex, [opacity, [width]]
@@ -219,6 +249,9 @@ export function evaluateQuery(
 
   const warp = (amount = 8, freq = 0.05): ShapeEffect =>
     ({ type: 'warp', amount, freq })
+
+  const material = (kind: import('../layers/types').Material3D = 'default', roughness = 0.5, intensity = 0.5): ShapeEffect =>
+    ({ type: 'material', material: kind, roughness, intensity })
 
   // ── Group stack ─────────────────────────────────────────────────────────
   // beginGroup(...effects) captures all shapes created until endGroup()
@@ -351,6 +384,27 @@ export function evaluateQuery(
     shapes.push(shape)
   }
 
+  // ── 3D shape primitives ─────────────────────────────────────────────────
+  const cube = (x: number, y: number, size: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    const { stroke, transform: xform, effects } = collectTrailing(trailing)
+    makeShape('cube', x, y, size, size, colorArg, opacity, stroke, effects, xform)
+  }
+
+  const sphere = (x: number, y: number, size: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    const { stroke, transform: xform, effects } = collectTrailing(trailing)
+    makeShape('sphere', x, y, size, size, colorArg, opacity, stroke, effects, xform)
+  }
+
+  const cylinder = (x: number, y: number, w: number, h: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    const { stroke, transform: xform, effects } = collectTrailing(trailing)
+    makeShape('cylinder', x, y, w, h, colorArg, opacity, stroke, effects, xform)
+  }
+
+  const torus = (x: number, y: number, size: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+    const { stroke, transform: xform, effects } = collectTrailing(trailing)
+    makeShape('torus', x, y, size, size, colorArg, opacity, stroke, effects, xform)
+  }
+
   // ── Spline (Catmull-Rom through N points) ─────────────────────────────────
   const spline = (pts: number[], colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
     if (!Array.isArray(pts) || pts.length < 4) return
@@ -470,9 +524,10 @@ export function evaluateQuery(
   try {
     new Function(
       'rect', 'ellipse', 'arc', 'line', 'curve', 'triangle', 'spline', 'beginSpline', 'vertex', 'endSpline',
+      'cube', 'sphere', 'cylinder', 'torus',
       'beginGroup', 'endGroup',
       'stroke', 'rotate', 'transform',
-      'shadow', 'blur', 'bevel', 'noise', 'warp',
+      'shadow', 'blur', 'bevel', 'noise', 'warp', 'material',
       'repeat', 'grid', 'wave', 'circular',
       'grad', 'radGrad',
       'palette',
@@ -483,9 +538,10 @@ export function evaluateQuery(
       code,
     )(
       rect, ellipse, arc, line, curve, triangle, spline, beginSpline, vertex, endSpline,
+      cube, sphere, cylinder, torus,
       beginGroup, endGroup,
       mkStroke, rotate, transform,
-      shadow, blur, bevel, noise, warp,
+      shadow, blur, bevel, noise, warp, material,
       repeat, grid, wave, circular,
       grad, radGrad,
       palette,

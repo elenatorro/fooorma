@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { clientToNorm } from '../lib/layers/renderer2d'
-  import type { Shape, ShapeGeom } from '../lib/layers/types'
+  import { clientToNorm, get3DBounds, SHAPE_3D_TYPES } from '../lib/layers/renderer2d'
+  import type { Shape, ShapeGeom, Layer } from '../lib/layers/types'
   import { MIN_ZOOM, MAX_ZOOM } from '../lib/viewport'
 
   const RULER_SIZE = 22  // px width/height of ruler bars
@@ -14,6 +14,7 @@
     panY,
     activeLayerId,
     activeLayerShapes,
+    resolvedLayers,
     selectedShapeIds,
     onCanvas2d,
     onZoomChange,
@@ -33,13 +34,14 @@
     panY: number
     activeLayerId: string | null
     activeLayerShapes: Shape[]
+    resolvedLayers: Layer[]
     selectedShapeIds: string[]
     onCanvas2d: (canvas: HTMLCanvasElement) => void
     onZoomChange: (zoom: number, px: number, py: number) => void
     onPanChange: (px: number, py: number) => void
     onStartDraw: (layerId: string, geom: ShapeGeom) => string
-    onSelectShape: (shapeId: string) => void
-    onToggleShape: (shapeId: string) => void
+    onSelectShape: (shapeId: string, layerId: string) => void
+    onToggleShape: (shapeId: string, layerId: string) => void
     onDeselect: () => void
     onUpdateGeom: (layerId: string, shapeId: string, geom: ShapeGeom) => void
     onMoveBatch: (layerId: string, moves: Array<{ shapeId: string; geom?: ShapeGeom; pts?: number[] }>) => void
@@ -91,30 +93,46 @@
 
   function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)) }
 
-  function hitTest(nx: number, ny: number): Shape | null {
+  function shapeHit(s: Shape, px: number, py: number, PAD: number): boolean {
+    if (s.pts && s.type !== 'arc') {
+      const xs = s.pts.filter((_, j) => j % 2 === 0).map(v => v * artW)
+      const ys = s.pts.filter((_, j) => j % 2 === 1).map(v => v * artH)
+      return px >= Math.min(...xs) - PAD && px <= Math.max(...xs) + PAD &&
+             py >= Math.min(...ys) - PAD && py <= Math.max(...ys) + PAD
+    }
+    const cx = s.geom.x * artW
+    const cy = s.geom.y * artH
+    const rw = s.geom.w * artW / 2 + PAD
+    const rh = s.geom.h * artW / 2 + PAD
+    const dx = px - cx
+    const dy = py - cy
+    if (SHAPE_3D_TYPES.has(s.type)) {
+      const bounds = get3DBounds(s.type, cx, cy, s.geom.w * artW, s.geom.h * artW, s.transform)
+      if (bounds) {
+        const [bl, bt, bw, bh] = bounds
+        return px >= bl - PAD && px <= bl + bw + PAD && py >= bt - PAD && py <= bt + bh + PAD
+      }
+      return false
+    } else if (s.type === 'rect') {
+      return Math.abs(dx) <= rw && Math.abs(dy) <= rh
+    } else {
+      return (dx / rw) ** 2 + (dy / rh) ** 2 <= 1
+    }
+  }
+
+  /** Hit-test across all visible layers, topmost shape first (last layer = top). */
+  function hitTest(nx: number, ny: number): { shape: Shape; layerId: string } | null {
     const px = nx * artW
     const py = ny * artH
     const PAD = 6  // min click area in pixels
-    for (let i = activeLayerShapes.length - 1; i >= 0; i--) {
-      const s = activeLayerShapes[i]
-      if (s.pts && s.type !== 'arc') {
-        // Bounding-box hit for line / curve / triangle
-        const xs = s.pts.filter((_, j) => j % 2 === 0).map(v => v * artW)
-        const ys = s.pts.filter((_, j) => j % 2 === 1).map(v => v * artH)
-        if (px >= Math.min(...xs) - PAD && px <= Math.max(...xs) + PAD &&
-            py >= Math.min(...ys) - PAD && py <= Math.max(...ys) + PAD) return s
-        continue
-      }
-      const cx = s.geom.x * artW
-      const cy = s.geom.y * artH
-      const rw = s.geom.w * artW / 2 + PAD
-      const rh = s.geom.h * artW / 2 + PAD
-      const dx = px - cx
-      const dy = py - cy
-      if (s.type === 'rect') {
-        if (Math.abs(dx) <= rw && Math.abs(dy) <= rh) return s
-      } else {
-        if ((dx / rw) ** 2 + (dy / rh) ** 2 <= 1) return s
+    // Iterate layers in reverse (top layer drawn last = visually on top)
+    for (let li = resolvedLayers.length - 1; li >= 0; li--) {
+      const layer = resolvedLayers[li]
+      if (!layer.visible) continue
+      for (let i = layer.shapes.length - 1; i >= 0; i--) {
+        if (shapeHit(layer.shapes[i], px, py, PAD)) {
+          return { shape: layer.shapes[i], layerId: layer.id }
+        }
       }
     }
     return null
@@ -144,15 +162,16 @@
       return
     }
 
-    if (activeLayerId) {
+    {
       const rect = artboardHost.getBoundingClientRect()
       const { nx, ny } = clientToNorm(e.clientX, e.clientY, rect, artW, artH)
       const hit = hitTest(nx, ny)
       if (hit) {
+        const { shape, layerId } = hit
         if (e.shiftKey) {
           // Shift+click: toggle shape in/out of selection
-          onToggleShape(hit.id)
-        } else if (selectedShapeIds.includes(hit.id) && selectedShapeIds.length > 1) {
+          onToggleShape(shape.id, layerId)
+        } else if (selectedShapeIds.includes(shape.id) && selectedShapeIds.length > 1) {
           // Clicking inside a multi-selection: move all together
           multiMoveDrag = {
             startNx: nx, startNy: ny,
@@ -161,17 +180,17 @@
               .map(s => ({ id: s.id, geom: { ...s.geom }, pts: s.pts ? [...s.pts] : undefined, type: s.type })),
           }
         } else {
-          // Single select + move
-          onSelectShape(hit.id)
-          if (hit.pts && hit.type !== 'arc') {
-            ptsDrag  = { shapeId: hit.id, origPts: [...hit.pts], startNx: nx, startNy: ny }
+          // Single select + move (switches active layer if needed)
+          onSelectShape(shape.id, layerId)
+          if (shape.pts && shape.type !== 'arc') {
+            ptsDrag  = { shapeId: shape.id, origPts: [...shape.pts], startNx: nx, startNy: ny }
           } else {
-            moveDrag = { shapeId: hit.id,
-              offsetNx: nx - hit.geom.x, offsetNy: ny - hit.geom.y,
-              origW: hit.geom.w, origH: hit.geom.h }
+            moveDrag = { shapeId: shape.id,
+              offsetNx: nx - shape.geom.x, offsetNy: ny - shape.geom.y,
+              origW: shape.geom.w, origH: shape.geom.h }
           }
         }
-      } else if (!e.shiftKey) {
+      } else if (!e.shiftKey && activeLayerId) {
         // Click on empty canvas (no shift): deselect and enter draw mode
         onDeselect()
         drawDrag = { startNx: nx, startNy: ny }
@@ -243,7 +262,7 @@
     }
 
     // Hover detection (no drag active)
-    hoverHit = activeLayerId !== null && hitTest(nx, ny) !== null
+    hoverHit = hitTest(nx, ny) !== null
   }
 
   function onPointerUp() {
@@ -444,9 +463,11 @@
         ? 'grab'
         : (moveDrag !== null || ptsDrag !== null || multiMoveDrag !== null)
           ? 'move'
-          : activeLayerId
-            ? (hoverHit ? 'move' : 'crosshair')
-            : 'default'
+          : hoverHit
+            ? 'move'
+            : activeLayerId
+              ? 'crosshair'
+              : 'default'
   )
 </script>
 

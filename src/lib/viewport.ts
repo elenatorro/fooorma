@@ -6,7 +6,7 @@ export const MAX_ZOOM = 20
 
 /**
  * Maximum canvas render scale (zoom × devicePixelRatio capped here).
- * Prevents the canvas bitmap from exceeding ~4096px on the long side at any zoom,
- * keeping memory usage bounded. Visual zoom (CSS transform) is unaffected.
+ * Higher values keep shapes crisp when zooming in, at the cost of more memory.
+ * At scale 6 with an A4 artboard (794×1123), the canvas bitmap tops out at ~6740×4764px.
  */
-export const MAX_RENDER_SCALE = 4
+export const MAX_RENDER_SCALE = 6

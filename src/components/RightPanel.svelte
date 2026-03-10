@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Layer, Shape, ShapeEffect, ShapeGeom } from '../lib/layers/types'
+  import type { Layer, Material3D, Shape, ShapeEffect, ShapeGeom } from '../lib/layers/types'
   import type { Palette } from '../lib/palettes/index'
   import { evaluateQuery } from '../lib/query/index'
   import { API_SNIPPETS } from '../lib/api-snippets'
@@ -97,7 +97,8 @@
   function forAllGeom(mkGeom: (s: Shape) => ShapeGeom) {
     if (!activeLayer || !activeShape) return
     if (selectedShapes.length > 1) {
-      const geomShapes = selectedShapes.filter(s => s.type === 'rect' || s.type === 'ellipse' || s.type === 'arc')
+      const geomShapes = selectedShapes.filter(s => s.type === 'rect' || s.type === 'ellipse' || s.type === 'arc'
+        || s.type === 'cube' || s.type === 'sphere' || s.type === 'cylinder' || s.type === 'torus')
       if (geomShapes.length > 0)
         onBatchUpdateShapes(activeLayer.id, geomShapes.map(s => ({ shapeId: s.id, patch: { geom: mkGeom(s) } })))
     } else {
@@ -273,6 +274,59 @@
   ellipse(x, y, s, s, palette('Ocean', i % 6), lerp(0.4, 1, t))
 })`,
     },
+    {
+      name: 'Metal Cubes',
+      desc: 'Metallic cubes in a grid with sharp highlights',
+      code: `grid(5, 6, (c, r, ct, rt) => {
+  const n = nz(ct * 3, rt * 3)
+  cube((c + 0.5) / 5, (r + 0.5) / 6, lerp(0.06, 0.12, n),
+    palette('Neon', c + r), lerp(0.6, 1, n),
+    transform({ rotateX: 30 + n * 25, rotateY: 40 + n * 30 }), material('metal'))
+})`,
+    },
+    {
+      name: 'Plastic Spheres',
+      desc: 'Glossy plastic spheres along a wave',
+      code: `wave(18, 0.22, 1.2, (i, t, x, y) => {
+  const s = lerp(0.04, 0.08, nz(t * 5))
+  sphere(x, y, s, palette('Sunset', i % 6), 0.9,
+    transform({ rotateX: 25, rotateY: t * 60, smooth: 24 }), material('plastic'))
+})`,
+    },
+    {
+      name: 'Marble Tori',
+      desc: 'Marble-textured tori arranged in a circle',
+      code: `circular(10, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {
+  torus(x, y, 0.07, palette('Aurora', i), 0.85,
+    transform({ rotateX: 60, rotateY: angle * 180 / PI }), material('marble'))
+})`,
+    },
+    {
+      name: 'Glass Cylinders',
+      desc: 'Translucent glass columns with rim lighting',
+      code: `repeat(9, (i, t) => {
+  const n = nz(t * 4)
+  const h = lerp(0.08, 0.22, n)
+  cylinder((i + 0.5) / 9, 0.55 - h / 2, 0.05, h,
+    palette('Ocean', i), 0.85,
+    transform({ rotateX: 20, rotateY: 35 }), material('glass'))
+})`,
+    },
+    {
+      name: 'Material Mix',
+      desc: 'Mixed materials and shapes scattered with noise',
+      code: `const mats = ['metal', 'plastic', 'marble', 'glass']
+repeat(30, (i, t) => {
+  const x = nz(i * 1.7, 0.3)
+  const y = nz(i * 2.3, 0.7)
+  const s = lerp(0.03, 0.07, nz(i * 0.5))
+  const shapes = [cube, sphere, torus]
+  const shape = shapes[i % 3]
+  shape(lerp(0.08, 0.92, x), lerp(0.08, 0.92, y), s,
+    palette('Ember', i % 6), lerp(0.5, 0.95, t),
+    transform({ rotateX: 30 + i * 7, rotateY: 45 + i * 11 }), material(mats[i % 4]))
+})`,
+    },
   ]
 
   function loadSample(code: string) {
@@ -287,7 +341,7 @@
   let tplCount   = $state(8)
   let tplCols    = $state(4)
   let tplRows    = $state(4)
-  let tplShape   = $state<'rect' | 'ellipse' | 'arc' | 'line' | 'curve' | 'triangle'>('rect')
+  let tplShape   = $state<'rect' | 'ellipse' | 'arc' | 'line' | 'curve' | 'triangle' | 'cube' | 'sphere' | 'cylinder' | 'torus'>('rect')
   let tplColor   = $state('#8b5cf6')
   let tplOpacity = $state(0.85)
 
@@ -299,11 +353,16 @@
     const nc = tplCols
     const nr = tplRows
 
+    // 3D shapes use size-based API (cube/sphere/torus) or w,h (cylinder)
+    const is3D = s === 'cube' || s === 'sphere' || s === 'cylinder' || s === 'torus'
+
     if (tpl === 'single') {
       if (s === 'arc')      return `arc(0.5, 0.5, 0.2, 0, 270, ${color}, ${op})`
       if (s === 'line')     return `line(0.1, 0.5, 0.9, 0.5, ${color}, ${op})`
       if (s === 'curve')    return `curve(0.1, 0.5, 0.5, 0.1, 0.9, 0.5, ${color}, ${op})`
       if (s === 'triangle') return `triangle(0.5, 0.1, 0.2, 0.9, 0.8, 0.9, ${color}, ${op})`
+      if (s === 'cylinder') return `cylinder(0.5, 0.5, 0.25, 0.35, ${color}, ${op})`
+      if (is3D)             return `${s}(0.5, 0.5, 0.35, ${color}, ${op})`
       return `${s}(0.5, 0.5, 0.7, 0.7, ${color}, ${op})`
     }
 
@@ -316,6 +375,10 @@
         return `repeat(${n}, (i, t) => {\n  line(0.1, (i + 0.5) / ${n}, 0.9, (i + 0.5) / ${n}, ${color}, ${op})\n})`
       if (s === 'curve')
         return `repeat(${n}, (i, t) => {\n  const y = (i + 0.5) / ${n}\n  curve(0.1, y - 0.06, 0.5, y + 0.06, 0.9, y - 0.06, ${color}, ${op})\n})`
+      if (s === 'cylinder')
+        return `repeat(${n}, (i, t) => {\n  cylinder((i + 0.5) / ${n}, 0.5, 1/${n} * 0.7, 0.3, ${color}, ${op})\n})`
+      if (is3D)
+        return `repeat(${n}, (i, t) => {\n  ${s}((i + 0.5) / ${n}, 0.5, 1/${n} * 0.8, ${color}, ${op})\n})`
       return `repeat(${n}, (i, t) => {\n  const cx = (i + 0.5) / ${n}\n  const d = 1/${n} * 0.4\n  triangle(cx, 0.5 - d, cx - d, 0.5 + d, cx + d, 0.5 + d, ${color}, ${op})\n})`
     }
 
@@ -328,6 +391,10 @@
         return `grid(${nc}, ${nr}, (c, r) => {\n  const x = (c + 0.5) / ${nc}\n  const y = (r + 0.5) / ${nr}\n  const d = 1/${nc} * 0.4\n  line(x - d, y, x + d, y, ${color}, ${op})\n})`
       if (s === 'curve')
         return `grid(${nc}, ${nr}, (c, r) => {\n  const x = (c + 0.5) / ${nc}\n  const y = (r + 0.5) / ${nr}\n  const d = 1/${nc} * 0.4\n  curve(x - d, y, x, y - d, x + d, y, ${color}, ${op})\n})`
+      if (s === 'cylinder')
+        return `grid(${nc}, ${nr}, (c, r) => {\n  cylinder((c + 0.5) / ${nc}, (r + 0.5) / ${nr}, 1/${nc} * 0.7, 1/${nr} * 0.7, ${color}, ${op})\n})`
+      if (is3D)
+        return `grid(${nc}, ${nr}, (c, r) => {\n  ${s}((c + 0.5) / ${nc}, (r + 0.5) / ${nr}, 1/${Math.max(nc, nr)} * 0.8, ${color}, ${op})\n})`
       return `grid(${nc}, ${nr}, (c, r) => {\n  const x = (c + 0.5) / ${nc}\n  const y = (r + 0.5) / ${nr}\n  const d = 1/${nc} * 0.4\n  triangle(x, y - d, x - d, y + d, x + d, y + d, ${color}, ${op})\n})`
     }
 
@@ -341,6 +408,10 @@
         return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const len = 0.015 + t * 0.025\n  const nx = cos(angle + PI / 2) * len\n  const ny = sin(angle + PI / 2) * len\n  line(cx - nx, cy - ny, cx + nx, cy + ny, ${color}, ${op})\n})`
       if (s === 'curve')
         return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.03 + t * 0.04\n  curve(cx - d, cy, cx, cy - d, cx + d, cy, ${color}, ${op})\n})`
+      if (s === 'cylinder')
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const sz = 0.04 + t * 0.06\n  cylinder(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, sz * 0.7, sz, ${color}, ${op})\n})`
+      if (is3D)
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  ${s}(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.04 + t * 0.06, ${color}, ${op})\n})`
       return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.02 + t * 0.03\n  triangle(cx, cy - d, cx - d, cy + d, cx + d, cy + d, ${color}, ${op})\n})`
     }
 
@@ -354,6 +425,10 @@
         return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  line(x - 0.02, y, x + 0.02, y, ${color}, ${op})\n})`
       if (s === 'curve')
         return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  const d = 1/${n} * 0.3\n  curve(x - d, y, x, y - d, x + d, y, ${color}, ${op})\n})`
+      if (s === 'cylinder')
+        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  cylinder(x, y, 1/${n} * 0.5, 1/${n} * 0.7, ${color}, ${op})\n})`
+      if (is3D)
+        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  ${s}(x, y, 1/${n} * 0.7, ${color}, ${op})\n})`
       return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  const d = 1/${n} * 0.35\n  triangle(x, y - d, x - d, y + d, x + d, y + d, ${color}, ${op})\n})`
     }
 
@@ -366,6 +441,10 @@
       return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  const nx = cos(angle) * 0.03\n  const ny = sin(angle) * 0.03\n  line(x - nx, y - ny, x + nx, y + ny, ${color}, ${op})\n})`
     if (s === 'curve')
       return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  const d = 0.04\n  curve(x - d, y, x, y - d, x + d, y, ${color}, ${op})\n})`
+    if (s === 'cylinder')
+      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  cylinder(x, y, 0.06, 0.08, ${color}, ${op})\n})`
+    if (is3D)
+      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  ${s}(x, y, 0.08, ${color}, ${op})\n})`
     return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  const d = 0.03\n  triangle(x, y - d, x - d, y + d, x + d, y + d, ${color}, ${op})\n})`
   }
 
@@ -598,7 +677,7 @@
         <!-- Shape type -->
         {#if true}
           <div class="shape-list" style:margin-top="8px" style:margin-bottom="8px">
-            {#each ([['rect','▭','Rect'],['ellipse','◯','Ellipse'],['arc','◜','Arc'],['line','╱','Line'],['curve','∿','Curve'],['triangle','△','Triangle']] as const) as [val, icon, label]}
+            {#each ([['rect','▭','Rect'],['ellipse','◯','Ellipse'],['arc','◜','Arc'],['line','╱','Line'],['curve','∿','Curve'],['triangle','△','Triangle'],['cube','⬡','Cube'],['sphere','●','Sphere'],['cylinder','⬮','Cylinder'],['torus','◎','Torus']] as const) as [val, icon, label]}
               <button class="shape-list-item" class:active={tplShape === val} onclick={() => tplShape = val as typeof tplShape}>
                 <span class="shape-list-icon">{icon}</span>{label}
               </button>
@@ -777,6 +856,10 @@
             ['line',     '╱', 'Line',     [0.2,0.5,0.8,0.5]],
             ['curve',    '∿', 'Curve',    [0.2,0.5,0.5,0.1,0.8,0.5]],
             ['triangle', '△', 'Triangle', [0.5,0.1,0.2,0.9,0.8,0.9]],
+            ['cube',     '⬡', 'Cube',     undefined],
+            ['sphere',   '●', 'Sphere',   undefined],
+            ['cylinder', '⬮', 'Cylinder', undefined],
+            ['torus',    '◎', 'Torus',    undefined],
           ] as const) as [type, icon, label, defaultPts]}
             <button class="shape-list-item" class:active={activeShape.type === type}
               onclick={() => onUpdateShape(activeLayer.id, activeShape.id, {
@@ -796,7 +879,7 @@
           />
         </div>
 
-        <!-- Stroke (rect / ellipse / arc / triangle) -->
+        <!-- Stroke (rect / ellipse / arc / triangle / 3D shapes) -->
         {#if activeShape.type !== 'line' && activeShape.type !== 'curve'}
           <div class="prop-row" style:margin-top="10px">
             <label class="prop-label">Stroke</label>
@@ -818,7 +901,11 @@
               onChange={(c) => forAll(s => s.stroke ? { stroke: { ...s.stroke, hex: c.hex, opacity: c.opacity, gradient: c.gradient } } : {})}
             />
             {@const sk = activeShape.stroke}
-            <SliderRow id="stroke-width" label="Width" min={0.001} max={0.05} step={0.001}
+            {@const is3DStroke = activeShape.type === 'cube' || activeShape.type === 'sphere' || activeShape.type === 'cylinder' || activeShape.type === 'torus'}
+            <SliderRow id="stroke-width" label="Width"
+              min={is3DStroke ? 0.0005 : 0.0002}
+              max={is3DStroke ? 0.015 : 0.05}
+              step={is3DStroke ? 0.0005 : 0.0002}
               value={sk.width}
               onchange={(v) => forAll(s => s.stroke ? { stroke: { ...s.stroke, width: v } } : {})}
             />
@@ -852,20 +939,47 @@
           style="margin-top: 10px"
         />
 
-        <!-- Geometry sliders (rect / ellipse / arc center) -->
-        {#if activeShape.type === 'rect' || activeShape.type === 'ellipse' || activeShape.type === 'arc'}
+        <!-- Geometry sliders (rect / ellipse / arc / 3D shapes center) -->
+        {#if activeShape.type === 'rect' || activeShape.type === 'ellipse' || activeShape.type === 'arc'
+          || activeShape.type === 'cube' || activeShape.type === 'sphere' || activeShape.type === 'cylinder' || activeShape.type === 'torus'}
           <h2 class="section-title" style:margin-top="12px">Position & Size</h2>
-          {#each geomKeys.filter(k => activeShape.type !== 'arc' || k.key === 'x' || k.key === 'y') as { label, key }}
+          {@const is3DSingleSize = activeShape.type === 'cube' || activeShape.type === 'sphere' || activeShape.type === 'torus'}
+          {#each geomKeys.filter(k => {
+            if (activeShape.type === 'arc') return k.key === 'x' || k.key === 'y'
+            if (is3DSingleSize) return k.key === 'x' || k.key === 'y' || k.key === 'w'
+            return true
+          }).map(k => is3DSingleSize && k.key === 'w' ? { ...k, label: 'Size' } : k) as { label, key }}
             <SliderRow id={`geom-${key}`} {label} min={0} max={1} step={0.001}
               value={activeShape.geom[key]}
               onchange={(v) => {
                 if (key === 'x' || key === 'y') {
                   const delta = v - activeShape.geom[key]
                   forAllGeom(s => ({ ...s.geom, [key]: s.geom[key] + delta }))
+                } else if (is3DSingleSize && key === 'w') {
+                  forAllGeom(s => ({ ...s.geom, w: v, h: v }))
                 } else {
                   forAllGeom(s => ({ ...s.geom, [key]: v }))
                 }
               }}
+            />
+          {/each}
+        {/if}
+
+        <!-- 3D View sliders (cube / sphere / cylinder / torus) -->
+        {#if activeShape.type === 'cube' || activeShape.type === 'sphere' || activeShape.type === 'cylinder' || activeShape.type === 'torus'}
+          <h2 class="section-title" style:margin-top="12px">3D Transform</h2>
+          {@const t3d = activeShape.transform ?? {}}
+          {#each [
+            { id: 'v3d-rx', label: 'Tilt',   key: 'rotateX' as const, min: -180, max: 180, step: 1, val: t3d.rotateX ?? 35 },
+            { id: 'v3d-ry', label: 'Spin',    key: 'rotateY' as const, min: -180, max: 180, step: 1, val: t3d.rotateY ?? 45 },
+            { id: 'v3d-rz', label: 'Roll',    key: 'rotateZ' as const, min: -180, max: 180, step: 1, val: t3d.rotateZ ?? 0 },
+            { id: 'v3d-dp', label: 'Depth',   key: 'depth'   as const, min: 0,    max: 1,   step: 0.01, val: t3d.depth ?? 0 },
+            { id: 'v3d-sm', label: 'Smooth',  key: 'smooth'  as const, min: 3,    max: 128, step: 1, val: t3d.smooth ?? 32 },
+          ] as p}
+            <SliderRow id={p.id} label={p.label} min={p.min} max={p.max} step={p.step} value={p.val}
+              onchange={(v) => forAll(s => ({
+                transform: { ...(s.transform ?? {}), [p.key]: v }
+              }))}
             />
           {/each}
         {/if}
@@ -1070,7 +1184,8 @@
           </div>
         {/if}
 
-        <!-- Blur -->
+        <!-- Blur (not available for 3D shapes — too expensive) -->
+        {#if activeShape.type !== 'cube' && activeShape.type !== 'sphere' && activeShape.type !== 'cylinder' && activeShape.type !== 'torus'}
         <div class="fx-row">
           <input type="checkbox" id="fx-blur" checked={!!blurFx}
             onchange={() => toggleFx('blur', { blur: 4 })} />
@@ -1081,6 +1196,7 @@
             <SliderRow id="bl-am" label="Amount" min={0} max={20} step={0.5}
               value={blurFx.blur ?? 4} onchange={(v) => setFx('blur', { blur: v })} />
           </div>
+        {/if}
         {/if}
 
         <!-- Bevel -->
@@ -1126,6 +1242,49 @@
               />
             {/each}
           </div>
+        {/if}
+
+        <!-- Materials (3D shapes only) -->
+        {#if activeShape.type === 'cube' || activeShape.type === 'sphere' || activeShape.type === 'cylinder' || activeShape.type === 'torus'}
+          {@const materialFx = activeShape.effects?.find(e => e.type === 'material')}
+          {@const activeMat = materialFx?.material ?? null}
+          {#each [
+            { id: 'fx-metal',   mat: 'metal' as Material3D,   label: 'Metal',   r: 'Roughness', i: 'Reflectivity' },
+            { id: 'fx-plastic', mat: 'plastic' as Material3D, label: 'Plastic', r: 'Roughness', i: 'Glossiness' },
+            { id: 'fx-marble',  mat: 'marble' as Material3D,  label: 'Marble',  r: 'Veins',     i: 'Polish' },
+            { id: 'fx-glass',   mat: 'glass' as Material3D,   label: 'Glass',   r: 'Roughness', i: 'Transparency' },
+          ] as m}
+            <div class="fx-row">
+              <input type="checkbox" id={m.id} checked={activeMat === m.mat}
+                onchange={() => {
+                  if (activeMat === m.mat) {
+                    // Remove material effect
+                    if (!activeLayer || !activeShape) return
+                    onUpdateShape(activeLayer.id, activeShape.id, {
+                      effects: (activeShape.effects ?? []).filter(e => e.type !== 'material'),
+                    })
+                  } else {
+                    // Replace any existing material with this one
+                    if (!activeLayer || !activeShape) return
+                    const others = (activeShape.effects ?? []).filter(e => e.type !== 'material')
+                    onUpdateShape(activeLayer.id, activeShape.id, {
+                      effects: [...others, { type: 'material', material: m.mat, roughness: 0.5, intensity: 0.5 } as ShapeEffect],
+                    })
+                  }
+                }} />
+              <label for={m.id} class="fx-label">{m.label}</label>
+            </div>
+            {#if activeMat === m.mat && materialFx}
+              <div class="fx-params">
+                <SliderRow id={`${m.id}-r`} label={m.r} min={0} max={1} step={0.01}
+                  value={materialFx.roughness ?? 0.5}
+                  onchange={(v) => setFx('material', { roughness: v })} />
+                <SliderRow id={`${m.id}-i`} label={m.i} min={0} max={1} step={0.01}
+                  value={materialFx.intensity ?? 0.5}
+                  onchange={(v) => setFx('material', { intensity: v })} />
+              </div>
+            {/if}
+          {/each}
         {/if}
 
       {:else}
@@ -1832,6 +1991,7 @@
     font-size: 11px;
     color: var(--text-3);
   }
+
 
   .color-control {
     display: flex;

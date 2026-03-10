@@ -1,4 +1,4 @@
-import type { Gradient, Layer, ShapeEffect, ShapeTransform } from './types'
+import type { Gradient, Layer, Material3D, ShapeEffect, ShapeStroke, ShapeTransform } from './types'
 
 // ── Gradient helpers ──────────────────────────────────────────────────────────
 
@@ -161,21 +161,22 @@ function applyWarp(
 }
 
 // Offscreen canvas at physical resolution, matching main ctx transform for warp isolation.
-let _warpCanvas: HTMLCanvasElement | null = null
-let _warpCtx: CanvasRenderingContext2D | null = null
+// Keyed by target canvas to avoid cross-contamination between viewport and export.
+const _warpPool = new WeakMap<HTMLCanvasElement, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }>()
 
-function getWarpCtx(physW: number, physH: number): CanvasRenderingContext2D {
-  if (!_warpCanvas) {
-    _warpCanvas = document.createElement('canvas')
-    // willReadFrequently tells Firefox to use a software-backed canvas,
-    // avoiding GPU→CPU readback delays that can drop the first frame.
-    _warpCtx    = _warpCanvas.getContext('2d', { willReadFrequently: true })!
+function getWarpCtx(targetCanvas: HTMLCanvasElement, physW: number, physH: number): CanvasRenderingContext2D {
+  let entry = _warpPool.get(targetCanvas)
+  if (!entry) {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+    entry = { canvas, ctx }
+    _warpPool.set(targetCanvas, entry)
   }
-  if (_warpCanvas.width !== physW || _warpCanvas.height !== physH) {
-    _warpCanvas.width  = physW
-    _warpCanvas.height = physH
+  if (entry.canvas.width !== physW || entry.canvas.height !== physH) {
+    entry.canvas.width  = physW
+    entry.canvas.height = physH
   }
-  return _warpCtx!
+  return entry.ctx
 }
 
 // ── Group renderer ────────────────────────────────────────────────────────────
@@ -198,6 +199,449 @@ function flattenGroupShapes(children: import('./types').Shape[], groupEffects: i
       effects: [...(child.effects ?? []), ...groupEffects],
     }
   })
+}
+
+// ── 3D projection engine ─────────────────────────────────────────────────────
+
+type V3 = [number, number, number]
+
+// Default 3D transform values
+const DEF_RX = 35, DEF_RY = 45, DEF_RZ = 0, DEF_DEPTH = 0, DEF_SMOOTH = 32
+
+/** Build a rotation matrix from Euler angles (degrees). Order: Y → X → Z */
+function rotMatrix(rxDeg: number, ryDeg: number, rzDeg: number): (v: V3) => V3 {
+  const toRad = Math.PI / 180
+  const cx = Math.cos(rxDeg * toRad), sx = Math.sin(rxDeg * toRad)
+  const cy = Math.cos(ryDeg * toRad), sy = Math.sin(ryDeg * toRad)
+  const cz = Math.cos(rzDeg * toRad), sz = Math.sin(rzDeg * toRad)
+  // Combined Rz * Rx * Ry
+  const m00 = cz * cy + sz * sx * sy, m01 = -sz * cy + cz * sx * sy, m02 = cx * sy
+  const m10 = sz * cx,                m11 = cz * cx,                  m12 = -sx
+  const m20 = -cz * sy + sz * sx * cy, m21 = sz * sy + cz * sx * cy, m22 = cx * cy
+  return ([x, y, z]) => [
+    m00 * x + m01 * y + m02 * z,
+    m10 * x + m11 * y + m12 * z,
+    m20 * x + m21 * y + m22 * z,
+  ]
+}
+
+/** Project rotated 3D point to 2D with optional perspective depth. */
+function project(v: V3, cx: number, cy: number, depth: number): [number, number] {
+  // depth 0 = orthographic, depth 1 = noticeable perspective
+  // Perspective divides by (1 + z * factor), where factor scales with depth
+  const perspFactor = depth * 0.003
+  const scale = perspFactor > 0 ? 1 / (1 + v[2] * perspFactor) : 1
+  return [cx + v[0] * scale, cy - v[1] * scale]
+}
+
+
+/** Darken/lighten a hex color by a factor (0–2, 1 = unchanged). */
+function shadeHex(hex: string, factor: number): string {
+  const c = hex.replace('#', '')
+  const r = Math.min(255, Math.max(0, Math.round((parseInt(c.slice(0, 2), 16) || 0) * factor)))
+  const g = Math.min(255, Math.max(0, Math.round((parseInt(c.slice(2, 4), 16) || 0) * factor)))
+  const b = Math.min(255, Math.max(0, Math.round((parseInt(c.slice(4, 6), 16) || 0) * factor)))
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
+
+/** Light direction (normalized): upper-left, toward camera */
+const LIGHT_DIR: V3 = (() => {
+  const lx = -0.4, ly = 0.6, lz = -0.7
+  const len = Math.sqrt(lx * lx + ly * ly + lz * lz)
+  return [lx / len, ly / len, lz / len] as V3
+})()
+
+/** Reflect vector r = 2(n·l)n - l */
+function reflect(n: V3, l: V3): V3 {
+  const dot = n[0] * l[0] + n[1] * l[1] + n[2] * l[2]
+  return [2 * dot * n[0] - l[0], 2 * dot * n[1] - l[1], 2 * dot * n[2] - l[2]]
+}
+
+interface MaterialShade {
+  shade: number     // base color multiplier
+  specular: number  // additive white highlight 0–1
+  alpha: number     // opacity multiplier 0–1
+}
+
+/** Camera-relative shading from a rotated normal. Returns material-aware shade info.
+ *  roughness 0–1: low = mirror-sharp specular, high = diffuse/soft (default 0.5)
+ *  intensity 0–1: overall effect strength (default 0.5) */
+function shadeFromNormal(n: V3, material: Material3D = 'default', roughness = 0.5, intensity = 0.5): MaterialShade {
+  const len = Math.sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]) || 1
+  const nx = n[0] / len, ny = n[1] / len, nz = n[2] / len
+  const norm: V3 = [nx, ny, nz]
+
+  // Diffuse: dot(normal, light)
+  const diffuse = Math.max(0, -(nx * LIGHT_DIR[0] + ny * LIGHT_DIR[1] + nz * LIGHT_DIR[2]))
+  // Facing camera factor
+  const facing = Math.max(0, -nz)
+
+  // View direction (camera looks toward +z in our setup, so view = [0,0,-1])
+  const r = reflect(norm, LIGHT_DIR)
+  const specRaw = Math.max(0, -(r[2]))  // dot(reflect, viewDir=[0,0,-1])
+
+  switch (material) {
+    case 'metal': {
+      // roughness: low = mirror, high = brushed. intensity: reflectivity
+      const specPow = 10 + (1 - roughness) * 60   // 10–70
+      const specMul = 0.4 + intensity * 0.6        // 0.4–1.0
+      const base = (0.1 + (1 - intensity) * 0.1) + diffuse * (0.5 + intensity * 0.2)
+      const spec = Math.pow(specRaw, specPow) * specMul
+      return { shade: base, specular: spec, alpha: 1 }
+    }
+    case 'plastic': {
+      // roughness: specular size. intensity: highlight strength
+      const specPow = 5 + (1 - roughness) * 25    // 5–30
+      const specMul = 0.2 + intensity * 0.5        // 0.2–0.7
+      const base = 0.3 + diffuse * 0.55
+      const spec = Math.pow(specRaw, specPow) * specMul
+      return { shade: base, specular: spec, alpha: 1 }
+    }
+    case 'marble': {
+      // roughness: vein noise amount (handled in drawFaces). intensity: polish/specular
+      const specPow = 15 + (1 - roughness) * 15   // 15–30
+      const specMul = 0.1 + intensity * 0.3        // 0.1–0.4
+      const base = 0.4 + diffuse * 0.4 + facing * 0.15
+      const spec = Math.pow(specRaw, specPow) * specMul
+      return { shade: base, specular: spec, alpha: 1 }
+    }
+    case 'glass': {
+      // roughness: surface roughness. intensity: transparency
+      const rim = 1 - facing
+      const specPow = 10 + (1 - roughness) * 40   // 10–50
+      const specMul = 0.3 + (1 - roughness) * 0.5 // 0.3–0.8
+      const base = 0.5 + diffuse * 0.35
+      const spec = Math.pow(specRaw, specPow) * specMul
+      const alpha = (1 - intensity) * 0.3 + rim * (0.3 + intensity * 0.4)
+      return { shade: base, specular: spec, alpha }
+    }
+    default: {
+      // Original shading
+      const topLeft = Math.max(0, ny * 0.3 + (-nx) * 0.15)
+      return { shade: 0.3 + facing * 0.55 + topLeft * 0.25, specular: 0, alpha: 1 }
+    }
+  }
+}
+
+interface Face3D {
+  verts: [number, number][]
+  shade: MaterialShade
+  depth: number
+}
+
+/** Simple 2D convex hull (Graham scan) for clip paths */
+function convexHull(pts: [number, number][]): [number, number][] {
+  if (pts.length < 3) return pts
+  const sorted = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  const lower: [number, number][] = []
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop()
+    lower.push(p)
+  }
+  const upper: [number, number][] = []
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i]
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop()
+    upper.push(p)
+  }
+  lower.pop(); upper.pop()
+  return lower.concat(upper)
+}
+
+/** Add a white specular highlight to a hex color */
+function addSpecular(hex: string, specular: number): string {
+  if (specular <= 0) return hex
+  const c = hex.replace('#', '')
+  const r = Math.min(255, Math.round((parseInt(c.slice(0, 2), 16) || 0) + specular * 255))
+  const g = Math.min(255, Math.round((parseInt(c.slice(2, 4), 16) || 0) + specular * 255))
+  const b = Math.min(255, Math.round((parseInt(c.slice(4, 6), 16) || 0) + specular * 255))
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
+
+function drawFaces(
+  dc: CanvasRenderingContext2D,
+  faces: Face3D[],
+  hex: string,
+  opacity: number,
+  material: Material3D,
+  matRoughness: number,
+  gradient?: Gradient,
+  bx = 0, by = 0, bw = 0, bh = 0,
+  shapeStroke?: ShapeStroke,
+  artW = 0,
+) {
+  faces.sort((a, b) => b.depth - a.depth)
+
+  // Draw each face with a matching stroke to hide seams between adjacent polygons
+  for (const face of faces) {
+    dc.beginPath()
+    dc.moveTo(face.verts[0][0], face.verts[0][1])
+    for (let i = 1; i < face.verts.length; i++) dc.lineTo(face.verts[i][0], face.verts[i][1])
+    dc.closePath()
+
+    const { shade, specular, alpha } = face.shade
+    let fillStyle: string | CanvasGradient
+    if (gradient) {
+      const shadedGrad: Gradient = {
+        ...gradient,
+        stops: gradient.stops.map(s => ({ ...s, hex: addSpecular(shadeHex(s.hex, shade), specular) })),
+      }
+      fillStyle = makeGradient(dc, shadedGrad, bx, by, bw, bh)
+    } else {
+      fillStyle = addSpecular(shadeHex(hex, shade), specular)
+    }
+
+    dc.globalAlpha = opacity * alpha
+    dc.fillStyle = fillStyle
+    dc.fill()
+    if (!shapeStroke) {
+      // Stroke each face with its own fill color to eliminate seam lines
+      dc.strokeStyle = fillStyle
+      dc.lineWidth = material === 'glass' ? 0.25 : 0.5
+      dc.lineJoin = 'round'
+      if (material === 'glass') dc.globalAlpha = opacity * alpha * 0.5
+      dc.stroke()
+    }
+  }
+
+  // Wireframe stroke: draw edges of each visible face
+  // Scale relative to the shape's projected size, not the full artboard
+  if (shapeStroke) {
+    const shapeSize = Math.max(bw, bh) || (artW || 1)
+    const lw = shapeStroke.width * shapeSize
+    dc.lineWidth = lw
+    dc.lineJoin = shapeStroke.join ?? 'miter'
+    dc.lineCap = 'round'
+    if (shapeStroke.gradient) {
+      dc.strokeStyle = makeGradient(dc, shapeStroke.gradient, bx, by, bw, bh)
+      dc.globalAlpha = 1
+    } else {
+      dc.strokeStyle = shapeStroke.hex
+      dc.globalAlpha = shapeStroke.opacity
+    }
+    for (const face of faces) {
+      dc.beginPath()
+      dc.moveTo(face.verts[0][0], face.verts[0][1])
+      for (let i = 1; i < face.verts.length; i++) dc.lineTo(face.verts[i][0], face.verts[i][1])
+      dc.closePath()
+      dc.stroke()
+    }
+  }
+
+  // Marble: overlay subtle vein noise onto the entire shape
+  if (material === 'marble') {
+    // Collect all projected vertices for a convex hull clip
+    const allPts: [number, number][] = []
+    for (const f of faces) for (const v of f.verts) allPts.push(v)
+    const hull = convexHull(allPts)
+    if (hull.length >= 3) {
+      dc.save()
+      dc.beginPath()
+      dc.moveTo(hull[0][0], hull[0][1])
+      for (let i = 1; i < hull.length; i++) dc.lineTo(hull[i][0], hull[i][1])
+      dc.closePath()
+      dc.clip()
+      dc.globalAlpha = 0.05 + matRoughness * 0.2
+      dc.globalCompositeOperation = 'overlay'
+      const pat = dc.createPattern(getNoiseCanvas(), 'repeat')
+      if (pat) { dc.fillStyle = pat; dc.fillRect(bx, by, bw, bh) }
+      dc.restore()
+    }
+  }
+}
+
+// ── Shape generators (return raw V3 faces, before rotation/projection) ───────
+
+interface RawFace { verts: V3[]; normal: V3 }
+
+function cubeFaces(s: number): RawFace[] {
+  // Scale down so the cube's projected size matches sphere/cylinder visually
+  // (a cube's diagonal is sqrt(3)× its edge, so divide by ~1.7 to compensate)
+  const h = s / 3.4
+  // 6 faces with outward normals
+  return [
+    { verts: [[-h,-h,-h],[h,-h,-h],[h,h,-h],[-h,h,-h]], normal: [0,0,-1] },   // back
+    { verts: [[-h,-h,h],[h,-h,h],[h,h,h],[-h,h,h]],     normal: [0,0,1] },    // front
+    { verts: [[-h,-h,-h],[-h,-h,h],[-h,h,h],[-h,h,-h]], normal: [-1,0,0] },   // left
+    { verts: [[h,-h,-h],[h,-h,h],[h,h,h],[h,h,-h]],     normal: [1,0,0] },    // right
+    { verts: [[-h,h,-h],[h,h,-h],[h,h,h],[-h,h,h]],     normal: [0,1,0] },    // top
+    { verts: [[-h,-h,-h],[h,-h,-h],[h,-h,h],[-h,-h,h]], normal: [0,-1,0] },   // bottom
+  ]
+}
+
+function sphereFaces(radius: number, seg: number): RawFace[] {
+  const faces: RawFace[] = []
+  for (let i = 0; i < seg; i++) {
+    const phi0 = (Math.PI * i) / seg
+    const phi1 = (Math.PI * (i + 1)) / seg
+    for (let j = 0; j < seg; j++) {
+      const th0 = (2 * Math.PI * j) / seg
+      const th1 = (2 * Math.PI * (j + 1)) / seg
+      const v = (phi: number, th: number): V3 => [
+        radius * Math.sin(phi) * Math.cos(th),
+        radius * Math.cos(phi),
+        radius * Math.sin(phi) * Math.sin(th),
+      ]
+      const a = v(phi0, th0), b = v(phi1, th0), c = v(phi1, th1), d = v(phi0, th1)
+      const nx = (a[0] + b[0] + c[0] + d[0]) / 4
+      const ny = (a[1] + b[1] + c[1] + d[1]) / 4
+      const nz = (a[2] + b[2] + c[2] + d[2]) / 4
+      faces.push({ verts: [a, b, c, d], normal: [nx, ny, nz] })
+    }
+  }
+  return faces
+}
+
+function cylinderFaces(radius: number, height: number, seg: number): RawFace[] {
+  const faces: RawFace[] = []
+  const h = height / 2
+  // Side faces
+  for (let i = 0; i < seg; i++) {
+    const a0 = (2 * Math.PI * i) / seg
+    const a1 = (2 * Math.PI * (i + 1)) / seg
+    const c0 = Math.cos(a0), s0 = Math.sin(a0)
+    const c1 = Math.cos(a1), s1 = Math.sin(a1)
+    const nmx = (c0 + c1) / 2, nmz = (s0 + s1) / 2
+    faces.push({
+      verts: [
+        [radius * c0, -h, radius * s0],
+        [radius * c1, -h, radius * s1],
+        [radius * c1, h, radius * s1],
+        [radius * c0, h, radius * s0],
+      ],
+      normal: [nmx, 0, nmz],
+    })
+  }
+  // Top cap
+  const topVerts: V3[] = []
+  for (let i = 0; i < seg; i++) {
+    const a = (2 * Math.PI * i) / seg
+    topVerts.push([radius * Math.cos(a), h, radius * Math.sin(a)])
+  }
+  faces.push({ verts: topVerts, normal: [0, 1, 0] })
+  // Bottom cap
+  const botVerts: V3[] = []
+  for (let i = seg - 1; i >= 0; i--) {
+    const a = (2 * Math.PI * i) / seg
+    botVerts.push([radius * Math.cos(a), -h, radius * Math.sin(a)])
+  }
+  faces.push({ verts: botVerts, normal: [0, -1, 0] })
+  return faces
+}
+
+function torusFaces(majorR: number, minorR: number, majSeg: number, minSeg: number): RawFace[] {
+  const faces: RawFace[] = []
+  for (let i = 0; i < majSeg; i++) {
+    const t0 = (2 * Math.PI * i) / majSeg
+    const t1 = (2 * Math.PI * (i + 1)) / majSeg
+    for (let j = 0; j < minSeg; j++) {
+      const p0 = (2 * Math.PI * j) / minSeg
+      const p1 = (2 * Math.PI * (j + 1)) / minSeg
+      const v = (t: number, p: number): V3 => [
+        (majorR + minorR * Math.cos(p)) * Math.cos(t),
+        minorR * Math.sin(p),
+        (majorR + minorR * Math.cos(p)) * Math.sin(t),
+      ]
+      const a = v(t0, p0), b = v(t1, p0), c = v(t1, p1), d = v(t0, p1)
+      // Normal = vertex - ring center
+      const rcx = ((Math.cos(t0) + Math.cos(t1)) / 2) * majorR
+      const rcz = ((Math.sin(t0) + Math.sin(t1)) / 2) * majorR
+      const mid: V3 = [(a[0]+c[0])/2, (a[1]+c[1])/2, (a[2]+c[2])/2]
+      faces.push({ verts: [a, b, c, d], normal: [mid[0]-rcx, mid[1], mid[2]-rcz] })
+    }
+  }
+  return faces
+}
+
+export const SHAPE_3D_TYPES = new Set(['cube', 'sphere', 'cylinder', 'torus'])
+
+/** Generate raw 3D faces for a shape type at given pixel dimensions. */
+function generateRawFaces(type: string, pw: number, ph: number, seg: number): RawFace[] {
+  const size = Math.min(pw, ph)
+  if (type === 'cube')         return cubeFaces(size)
+  if (type === 'sphere')       return sphereFaces(size / 2, seg)
+  if (type === 'cylinder')     return cylinderFaces(size / 3, size * 0.7, seg)
+  if (type === 'torus')        return torusFaces(size / 3, size / 8, Math.round(seg * 1.3), seg)
+  return []
+}
+
+/** Compute the projected 2D bounding box of a 3D shape in artboard pixels.
+ *  Returns [left, top, width, height] or null if not a 3D shape. */
+export function get3DBounds(
+  type: string,
+  cx: number, cy: number, pw: number, ph: number,
+  t: ShapeTransform | undefined,
+): [number, number, number, number] | null {
+  if (!SHAPE_3D_TYPES.has(type)) return null
+  const rx = t?.rotateX ?? DEF_RX
+  const ry = t?.rotateY ?? DEF_RY
+  const rz = t?.rotateZ ?? DEF_RZ
+  const depth = t?.depth ?? DEF_DEPTH
+  const seg = Math.max(3, Math.min(128, Math.round(t?.smooth ?? DEF_SMOOTH)))
+  const raw = generateRawFaces(type, pw, ph, seg)
+  const rot = rotMatrix(rx, ry, rz)
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const f of raw) {
+    for (const v of f.verts) {
+      const rv = rot(v)
+      const [sx, sy] = project(rv, cx, cy, depth)
+      if (sx < minX) minX = sx; if (sx > maxX) maxX = sx
+      if (sy < minY) minY = sy; if (sy > maxY) maxY = sy
+    }
+  }
+  if (!isFinite(minX)) return null
+  return [minX, minY, maxX - minX, maxY - minY]
+}
+
+/** Render a 3D shape. Returns the convex hull of projected vertices for clip paths. */
+function render3DShape(
+  dc: CanvasRenderingContext2D,
+  type: string,
+  cx: number, cy: number, pw: number, ph: number,
+  hex: string, opacity: number,
+  t: ShapeTransform | undefined,
+  mat: Material3D,
+  matRoughness: number,
+  matIntensity: number,
+  gradient?: Gradient,
+  shapeStroke?: ShapeStroke,
+  artW = 0,
+): [number, number][] {
+  const rx = t?.rotateX ?? DEF_RX
+  const ry = t?.rotateY ?? DEF_RY
+  const rz = t?.rotateZ ?? DEF_RZ
+  const depth = t?.depth ?? DEF_DEPTH
+  const baseSeg = Math.max(3, Math.min(128, Math.round(t?.smooth ?? DEF_SMOOTH)))
+  // Glass needs higher tessellation so semi-transparent face seams are invisible
+  const seg = mat === 'glass' ? Math.min(128, Math.round(baseSeg * 1.5)) : baseSeg
+  const raw = generateRawFaces(type, pw, ph, seg)
+  if (raw.length === 0) return []
+
+  const rot = rotMatrix(rx, ry, rz)
+  const faces: Face3D[] = []
+  const allPts: [number, number][] = []
+  for (const f of raw) {
+    const rv = f.verts.map(rot)
+    const rn = rot(f.normal)
+    const pv = rv.map(v => project(v, cx, cy, depth))
+    const shade = shadeFromNormal(rn, mat, matRoughness, matIntensity)
+    let zSum = 0
+    for (const v of rv) zSum += v[2]
+    faces.push({ verts: pv, shade, depth: zSum / rv.length })
+    for (const v of pv) allPts.push(v)
+  }
+
+  // Bounding box from projected vertices
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const [vx, vy] of allPts) {
+    if (vx < minX) minX = vx; if (vx > maxX) maxX = vx
+    if (vy < minY) minY = vy; if (vy > maxY) maxY = vy
+  }
+  drawFaces(dc, faces, hex, opacity, mat, matRoughness, gradient, minX, minY, maxX - minX, maxY - minY, shapeStroke, artW)
+  return convexHull(allPts)
 }
 
 // ── Main renderer ─────────────────────────────────────────────────────────────
@@ -245,6 +689,52 @@ export function renderLayers2D(
       const left = px - pw / 2
       const top  = py - ph / 2
 
+      // ── 3D shapes: isometric projection ──
+      if (SHAPE_3D_TYPES.has(type)) {
+        const shadowFx   = effects?.find((e: ShapeEffect) => e.type === 'shadow')
+        const blurFx     = effects?.find((e: ShapeEffect) => e.type === 'blur')
+        const noiseFx    = effects?.find((e: ShapeEffect) => e.type === 'noise')
+        const bevelFx    = effects?.find((e: ShapeEffect) => e.type === 'bevel')
+        const materialFx = effects?.find((e: ShapeEffect) => e.type === 'material')
+        const mat: import('./types').Material3D = materialFx?.material ?? 'default'
+        const matRoughness = materialFx?.roughness ?? 0.5
+        const matIntensity = materialFx?.intensity ?? 0.5
+        ctx.save()
+        // Skip blur on 3D shapes — CSS filter blur is too expensive with many faces
+        if (shadowFx) {
+          ctx.shadowColor   = hexToRgba(shadowFx.color ?? '#000000', shadowFx.opacity ?? 0.5)
+          ctx.shadowBlur    = shadowFx.blur    ?? 10
+          ctx.shadowOffsetX = shadowFx.offsetX ?? 0
+          ctx.shadowOffsetY = shadowFx.offsetY ?? 4
+        }
+        if (shape.transform) applyTransform(ctx, shape.transform, px, py)
+        const hex = color.hex
+        const opacity = color.gradient ? 1 : color.opacity
+        const hull = render3DShape(ctx, type, px, py, pw, ph, hex, opacity, shape.transform, mat, matRoughness, matIntensity, color.gradient, stroke, artW)
+        // Clear shadow/blur before post-draw effects
+        ctx.shadowColor = 'transparent'
+        ctx.filter = 'none'
+        // Use convex hull of projected shape for clipping effects
+        if (hull.length >= 3 && (noiseFx || bevelFx)) {
+          const buildHullPath = () => {
+            ctx.beginPath()
+            ctx.moveTo(hull[0][0], hull[0][1])
+            for (let i = 1; i < hull.length; i++) ctx.lineTo(hull[i][0], hull[i][1])
+            ctx.closePath()
+          }
+          // Bounding box of hull
+          let hx0 = Infinity, hy0 = Infinity, hx1 = -Infinity, hy1 = -Infinity
+          for (const [vx, vy] of hull) {
+            if (vx < hx0) hx0 = vx; if (vx > hx1) hx1 = vx
+            if (vy < hy0) hy0 = vy; if (vy > hy1) hy1 = vy
+          }
+          if (bevelFx) applyBevel(ctx, buildHullPath, hx0, hy0, hx1 - hx0, hy1 - hy0, bevelFx.opacity ?? 0.6)
+          if (noiseFx) applyNoise(ctx, buildHullPath, noiseFx.amount ?? 0.3)
+        }
+        ctx.restore()
+        continue
+      }
+
       const shadowFx = effects?.find((e: ShapeEffect) => e.type === 'shadow')
       const blurFx   = effects?.find((e: ShapeEffect) => e.type === 'blur')
       const bevelFx  = effects?.find((e: ShapeEffect) => e.type === 'bevel')
@@ -255,7 +745,7 @@ export function renderLayers2D(
       // transform as ctx) so warp only distorts the shape's own pixels, then composite.
       let dc: CanvasRenderingContext2D
       if (warpFx) {
-        dc = getWarpCtx(physW, physH)
+        dc = getWarpCtx(ctx.canvas, physW, physH)
         dc.setTransform(1, 0, 0, 1, 0, 0)      // identity so clearRect covers full physical canvas
         dc.clearRect(0, 0, physW, physH)
         dc.setTransform(ctx.getTransform())     // match main ctx scale for shape drawing
@@ -455,10 +945,11 @@ export function renderLayers2D(
         }
         dc.restore()
         applyWarp(dc, wl, wt, ww, wh, warpFx.amount ?? 8, warpFx.freq ?? 0.05, pixelScale)
-        // Composite at 1:1 physical pixels (no zoom scaling applied to the drawImage)
+        // Composite warp canvas onto main canvas at 1:1 physical pixels
+        const warpCanvas = _warpPool.get(ctx.canvas)!.canvas
         ctx.save()
         ctx.setTransform(1, 0, 0, 1, 0, 0)
-        ctx.drawImage(_warpCanvas!, 0, 0)
+        ctx.drawImage(warpCanvas, 0, 0)
         ctx.restore()
         continue
       }
