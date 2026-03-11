@@ -1,6 +1,6 @@
 import type { Layer, Pattern } from '../layers/types'
 import type { Palette } from '../palettes/index'
-import { shapesToCode, evaluateQuery } from '../query/index'
+import { shapesToCode } from '../query/index'
 
 export interface ProjectData {
   layers: Layer[]
@@ -40,7 +40,6 @@ export function serializeProject({ layers, artW, artH, customPalettes = [], cust
     let header = `// @layer "${layer.name}"`
     if (!layer.visible)  header += ' hidden'
     if (layer.bgColor)   header += ` bg:${layer.bgColor}`
-    if (layer.mode === 'manual') header += ' mode:manual'
     out.push(header)
 
     const query = layer.mode === 'code'
@@ -64,7 +63,6 @@ export function parseProject(content: string): ProjectData {
     name: string
     visible: boolean
     bgColor?: string
-    mode: 'manual' | 'code'
     queryLines: string[]
   }
 
@@ -146,7 +144,6 @@ export function parseProject(content: string): ProjectData {
         name:    layerMatch[1],
         visible: !rest.includes(' hidden'),
         bgColor: rest.match(/ bg:(#[0-9a-fA-F]{6})/)?.[1],
-        mode:    rest.includes(' mode:manual') ? 'manual' : 'code',
         queryLines: [],
       }
       rawLayers.push(cur)
@@ -166,10 +163,6 @@ export function parseProject(content: string): ProjectData {
       visible: r.visible,
       bgColor: r.bgColor,
       query,
-    }
-    if (r.mode === 'manual') {
-      const { shapes } = evaluateQuery(query, artW, artH, allPalettes, stampPatterns)
-      return { ...base, mode: 'manual' as const, shapes }
     }
     return { ...base, mode: 'code' as const, shapes: [] }
   })

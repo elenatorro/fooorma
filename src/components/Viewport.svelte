@@ -305,6 +305,7 @@
     const vpRect = viewportEl.getBoundingClientRect()
     const vpW = vpRect.width
     const vpH = vpRect.height
+    if (vpW <= 0 || vpH <= 0) return  // layout not ready yet
 
     // --- Horizontal ruler ---
     const hRulerW = vpW - RULER_SIZE
@@ -435,12 +436,14 @@
   $effect(() => {
     // Re-draw rulers when zoom, pan, artboard size, or theme changes
     void zoom; void panX; void panY; void artW; void artH; void currentTheme
-    drawRulers()
+    // Use tick() to ensure DOM is updated before measuring layout
+    requestAnimationFrame(() => drawRulers())
   })
 
   onMount(() => {
     onCanvas2d(canvas2dEl)
-    drawRulers()
+    // Double-RAF ensures CSS custom properties and layout are fully settled
+    requestAnimationFrame(() => requestAnimationFrame(() => drawRulers()))
     // ResizeObserver catches both window resize and panel width changes
     const ro = new ResizeObserver(() => drawRulers())
     ro.observe(viewportEl)
@@ -510,7 +513,7 @@
   .viewport {
     position: fixed;
     top: 44px;
-    left: 0;
+    left: var(--code-panel-w, 0px);
     right: var(--panel-w, 260px);
     bottom: calc(36px + var(--code-panel-h, 0px));
     background: var(--viewport-bg);

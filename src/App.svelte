@@ -39,7 +39,7 @@
 
   import TopBar          from './components/TopBar.svelte'
   import RightPanel      from './components/RightPanel.svelte'
-  import BottomCodePanel from './components/BottomCodePanel.svelte'
+  import CodePanel       from './components/CodePanel.svelte'
   import StatusBar       from './components/StatusBar.svelte'
   import Viewport        from './components/Viewport.svelte'
   import { serializeProject, parseProject } from './lib/persist/index'
@@ -91,12 +91,14 @@
   let panY = $state(0)
 
   // ── Panel width (resizable + presets) ──────────────────────────────────────
-  let panelWidth = $state(parseInt(localStorage.getItem('forma_panel_w') ?? '260') || 260)
+  let panelWidth = $state(parseInt(localStorage.getItem('forma_panel_w') ?? '280') || 280)
   let resizeOrigin: { x: number; w: number } | null = null
 
-  // ── Code panel position ─────────────────────────────────────────────────────
-  let codePanelPos = $state<'right' | 'bottom'>((localStorage.getItem('forma_code_pos') as 'right' | 'bottom') ?? 'right')
-  let codePanelH   = $state(parseInt(localStorage.getItem('forma_code_h') ?? '280') || 280)
+  // ── Code panel ─────────────────────────────────────────────────────────────
+  let codePanelDock  = $state<'left' | 'bottom'>((localStorage.getItem('forma_code_dock') as 'left' | 'bottom') ?? 'left')
+  let codePanelW     = $state(parseInt(localStorage.getItem('forma_code_w') ?? '400') || 400)
+  let codePanelH     = $state(parseInt(localStorage.getItem('forma_code_h') ?? '280') || 280)
+  let codeEditScope  = $state<'layer' | 'file'>((localStorage.getItem('forma_code_scope') as 'layer' | 'file') ?? 'layer')
 
   function startResize(e: PointerEvent) {
     resizeOrigin = { x: e.clientX, w: panelWidth }
@@ -120,11 +122,14 @@
   })
 
   $effect(() => {
-    const mode = layers.find(l => l.id === activeLayerId)?.mode ?? 'manual'
-    const h = codePanelPos === 'bottom' && mode === 'code' ? codePanelH : 0
-    document.documentElement.style.setProperty('--code-panel-h', `${h}px`)
-    localStorage.setItem('forma_code_pos', codePanelPos)
+    const lw = codePanelDock === 'left' ? codePanelW : 0
+    const bh = codePanelDock === 'bottom' ? codePanelH : 0
+    document.documentElement.style.setProperty('--code-panel-w', `${lw}px`)
+    document.documentElement.style.setProperty('--code-panel-h', `${bh}px`)
+    localStorage.setItem('forma_code_dock', codePanelDock)
+    localStorage.setItem('forma_code_w', String(codePanelW))
     localStorage.setItem('forma_code_h', String(codePanelH))
+    localStorage.setItem('forma_code_scope', codeEditScope)
   })
 
   // Computed viewport size (minus bars)
@@ -502,6 +507,24 @@
     customPatterns = customPatterns.filter(p => p.id !== id)
   }
 
+  function handleApplyFile(text: string) {
+    commit()
+    try {
+      const prevName = layers.find(l => l.id === activeLayerId)?.name
+      const result = parseProject(text)
+      layers = result.layers
+      artW = result.artW
+      artH = result.artH
+      customPalettes = result.customPalettes ?? []
+      customPatterns = result.customPatterns ?? []
+      // Try to preserve active layer by name
+      const match = result.layers.find(l => l.name === prevName)
+      activeLayerId = match?.id ?? result.layers[result.layers.length - 1]?.id ?? null
+      activeShapeId = null
+      selectedShapeIds = []
+    } catch { /* parse failed — keep current state */ }
+  }
+
   // ── Canvas 2D ──────────────────────────────────────────────────────────────
   let canvas2d: HTMLCanvasElement | null = null
   let ctx2d: CanvasRenderingContext2D | null = null
@@ -526,8 +549,9 @@
   }
 
   function updateVP() {
-    vpW = window.innerWidth - panelWidth
-    vpH = window.innerHeight - 44 - 36
+    const leftW = codePanelDock === 'left' ? codePanelW : 0
+    vpW = window.innerWidth - panelWidth - leftW
+    vpH = window.innerHeight - 44 - 36 - (codePanelDock === 'bottom' ? codePanelH : 0)
   }
 
   let _prevRenderScale = 0
@@ -917,28 +941,29 @@
   onAddPattern={handleAddPattern}
   onUpdatePattern={handleUpdatePattern}
   onDeletePattern={handleDeletePattern}
-  {panelWidth}
-  onSetPanelW={(w) => { panelWidth = w; updateVP() }}
-  {codePanelPos}
-  onSetCodePanelPos={(p) => { codePanelPos = p }}
 />
 
-{#if codePanelPos === 'bottom'}
-  {@const activeCodeLayer = layers.find(l => l.id === activeLayerId && l.mode === 'code') ?? null}
-  {#if activeCodeLayer}
-    <BottomCodePanel
-      activeLayer={activeCodeLayer}
-      {artW}
-      {artH}
-      palettes={allPalettes}
-      stamps={allPatterns.filter(p => p.code)}
-      onSetQuery={handleSetQuery}
-      height={codePanelH}
-      onHeightChange={(h) => { codePanelH = h }}
-      onMoveToRight={() => { codePanelPos = 'right' }}
-    />
-  {/if}
-{/if}
+<CodePanel
+  {layers}
+  {activeLayerId}
+  {artW}
+  {artH}
+  palettes={allPalettes}
+  stamps={allPatterns.filter(p => p.code)}
+  {customPalettes}
+  customPatterns={customPatterns}
+  onSetQuery={handleSetQuery}
+  onSetMode={handleSetMode}
+  onApplyFile={handleApplyFile}
+  dock={codePanelDock}
+  onDockChange={(d) => { codePanelDock = d; updateVP() }}
+  scope={codeEditScope}
+  onScopeChange={(s) => { codeEditScope = s }}
+  width={codePanelW}
+  onWidthChange={(w) => { codePanelW = w; updateVP() }}
+  height={codePanelH}
+  onHeightChange={(h) => { codePanelH = h; updateVP() }}
+/>
 
 <StatusBar
   {zoom}

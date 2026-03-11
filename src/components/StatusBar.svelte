@@ -37,7 +37,7 @@
 <style>
   .statusbar {
     position: fixed;
-    bottom: 0; left: 0; right: var(--panel-w, 260px);
+    bottom: 0; left: var(--code-panel-w, 0px); right: var(--panel-w, 260px);
     height: 36px;
     background: var(--bg-bar);
     border-top: 1px solid var(--border);

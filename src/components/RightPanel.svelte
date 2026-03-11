@@ -2,11 +2,8 @@
   import type { Layer, Material3D, Pattern, PatternType, Shape, ShapeEffect, ShapeGeom } from '../lib/layers/types'
   import type { Palette } from '../lib/palettes/index'
   import { evaluateQuery, shapesToCode } from '../lib/query/index'
-  import { API_SNIPPETS } from '../lib/api-snippets'
-  import { adjustEditorFontSize } from '../lib/editor-font'
   import ColorPicker from './ColorPicker.svelte'
   import GradColorEditor from './GradColorEditor.svelte'
-  import CodeEditor from './CodeEditor.svelte'
   import SliderRow from './SliderRow.svelte'
 
   const {
@@ -41,10 +38,6 @@
     onAddPattern,
     onUpdatePattern,
     onDeletePattern,
-    panelWidth,
-    onSetPanelW,
-    codePanelPos,
-    onSetCodePanelPos,
   }: {
     artW: number
     artH: number
@@ -77,10 +70,6 @@
     onAddPattern: (pattern: Pattern) => void
     onUpdatePattern: (id: string, update: Partial<Pattern>) => void
     onDeletePattern: (id: string) => void
-    panelWidth: number
-    onSetPanelW: (w: number) => void
-    codePanelPos: 'right' | 'bottom'
-    onSetCodePanelPos: (p: 'right' | 'bottom') => void
   } = $props()
 
   const activeLayer  = $derived(layers.find(l => l.id === activeLayerId) ?? null)
@@ -166,35 +155,6 @@
     io.observe(sentinelEl)
     return () => io.disconnect()
   })
-
-  // Code editor state
-  let codeExpanded = $state(false)
-  let apiOpen      = $state(false)
-  let editorRef    = $state<{ insertAtCursor: (t: string) => void; getColorAtCursor: () => { hex: string; from: number; to: number } | null; replaceRange: (from: number, to: number, text: string) => void; focus: () => void } | null>(null)
-
-  const apiSnippets = API_SNIPPETS
-
-  // ── Cursor color detection ─────────────────────────────────────────────────
-  let cursorColor = $state<{ hex: string; from: number; to: number } | null>(null)
-
-  function detectColorAtCursor() {
-    cursorColor = editorRef?.getColorAtCursor() ?? null
-  }
-
-  function onCursorColorChange(newHex: string) {
-    if (!cursorColor) return
-    editorRef?.replaceRange(cursorColor.from, cursorColor.to, newHex)
-    cursorColor = { ...cursorColor, hex: newHex, to: cursorColor.from + 7 }
-  }
-
-  function copyCode() {
-    if (activeLayer) navigator.clipboard.writeText(activeLayer.query)
-  }
-
-  function insertSnippet(code: string) {
-    if (!activeLayer) return
-    editorRef?.insertAtCursor(code)
-  }
 
   // ── Samples ───────────────────────────────────────────────────────────────
   const SAMPLES: { name: string; desc: string; code: string }[] = [
@@ -366,7 +326,6 @@ tile(5, 7, (c, r, ct, rt) => {
     if (!activeLayer) return
     onSetMode(activeLayer.id, 'code')
     onSetQuery(activeLayer.id, code)
-    onTabChange('layers')
   }
 
   // Template builder state
@@ -500,7 +459,6 @@ tile(5, 7, (c, r, ct, rt) => {
     onSetMode(activeLayer.id, 'code')
     const existing = activeLayer.query.trimEnd()
     onSetQuery(activeLayer.id, existing ? existing + '\n' + code : code)
-    onTabChange('layers')
   }
 
   function saveCurrentAsPattern() {
@@ -628,28 +586,6 @@ tile(5, 7, (c, r, ct, rt) => {
 </script>
 
 <aside class="panel">
-  <!-- Panel controls: width presets + code panel position -->
-  <div class="panel-controls">
-    <div class="panel-presets">
-      {#each [[220,'S'],[280,'M'],[360,'L'],[480,'XL']] as const as [w, label]}
-        <button
-          class="preset-btn"
-          class:active={panelWidth === w}
-          onclick={() => onSetPanelW(w)}
-          title="{w}px"
-        >{label}</button>
-      {/each}
-    </div>
-    {#if activeLayer && isCodeMode}
-      <button
-        class="code-pos-btn"
-        class:active={codePanelPos === 'bottom'}
-        onclick={() => onSetCodePanelPos(codePanelPos === 'right' ? 'bottom' : 'right')}
-        title={codePanelPos === 'right' ? 'Move editor to bottom panel' : 'Move editor to right panel'}
-      >{codePanelPos === 'right' ? '↓ bottom' : '→ panel'}</button>
-    {/if}
-  </div>
-
   <!-- Tab bar -->
   <div class="tab-bar">
     <button
@@ -857,100 +793,6 @@ tile(5, 7, (c, r, ct, rt) => {
       </section>
     {/if}
 
-    <!-- Code editor (code mode, right-panel position only) -->
-    {#if activeLayer && isCodeMode && codePanelPos === 'right'}
-      <section class="section code-section" class:expanded={codeExpanded}>
-
-        <!-- Toolbar -->
-        <div class="code-toolbar">
-          <span class="code-label">Code</span>
-          {#if cursorColor}
-            <div class="code-color-pick" title="Edit color at cursor">
-              <ColorPicker
-                hex={cursorColor.hex}
-                showOpacity={false}
-                onChange={onCursorColorChange}
-              />
-              <span class="code-color-hex">{cursorColor.hex}</span>
-            </div>
-          {/if}
-          <div class="code-actions">
-            <button class="code-tool-btn" title="Decrease font size" onclick={() => adjustEditorFontSize(-1)}>A−</button>
-            <button class="code-tool-btn" title="Increase font size" onclick={() => adjustEditorFontSize(1)}>A+</button>
-            <button class="code-tool-btn" title="Copy code" onclick={copyCode}>copy</button>
-            <button class="code-tool-btn" title="Clear" onclick={() => activeLayer && onSetQuery(activeLayer.id, '')}>clear</button>
-            <button class="code-tool-btn expand-btn" class:active={codeExpanded} title={codeExpanded ? 'Collapse' : 'Expand'} onclick={() => codeExpanded = !codeExpanded}>↕</button>
-          </div>
-        </div>
-
-        <!-- Editor area -->
-        <CodeEditor
-          bind:this={editorRef}
-          value={activeLayer.query}
-          minHeight={codeExpanded ? '400px' : '220px'}
-          extraCompletions={palettes.map(p => `palette('${p.name}', 0)`)}
-          onChange={(v) => { onSetQuery(activeLayer.id, v); detectColorAtCursor() }}
-          onCursorChange={detectColorAtCursor}
-        />
-
-        <!-- Status bar -->
-        <div class="code-statusbar">
-          {#if codeResult?.errors.length}
-            <span class="status-err">● {codeResult.errors.length} error{codeResult.errors.length !== 1 ? 's' : ''}</span>
-          {:else if codeResult}
-            <span class="status-ok">● {codeResult.shapes.length} shape{codeResult.shapes.length !== 1 ? 's' : ''}</span>
-          {:else}
-            <span class="status-idle">—</span>
-          {/if}
-          <span class="status-lines">{activeLayer.query.split('\n').length} lines</span>
-        </div>
-
-        <!-- Error details -->
-        {#if codeResult?.errors.length}
-          <div class="error-list">
-            {#each codeResult.errors as err}
-              <p class="error-line">{err}</p>
-            {/each}
-          </div>
-        {/if}
-
-        <!-- API Reference -->
-        <div class="api-ref">
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="api-ref-toggle" onclick={() => apiOpen = !apiOpen}>
-            <span>API Reference</span>
-            <span class="api-chevron">{apiOpen ? '▴' : '▾'}</span>
-          </div>
-          {#if apiOpen}
-            <div class="api-ref-body">
-              {#each apiSnippets as snip}
-                <button class="api-snip" onclick={() => insertSnippet(snip.code)} title="Insert at cursor">
-                  <span class="api-snip-name">{snip.name}</span>
-                  <span class="api-snip-sig">{snip.sig}</span>
-                </button>
-              {/each}
-              <div class="api-consts">
-                {#each ['W', 'H', 'PI', 'TAU', 'sin', 'cos', 'abs', 'min', 'max', 'floor', 'ceil', 'round', 'random'] as c}
-                  <button class="api-const-btn" onclick={() => insertSnippet(c)} title={c}>{c}</button>
-                {/each}
-                {#each palettes as p}
-                  <button class="api-const-btn palette-var-btn" onclick={() => insertSnippet(`palette('${p.name}', 0)`)} title="{p.name} — {p.colors.length} colors">
-                    <span class="palette-var-dots">
-                      {#each p.colors.slice(0, 5) as c}
-                        <span class="palette-dot" style:background={c}></span>
-                      {/each}
-                    </span>
-                    {p.name}
-                  </button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-        </div>
-
-      </section>
-    {/if}
 
     <!-- Shapes sub-list (manual + code mode) -->
     {#if activeLayer}
@@ -1655,51 +1497,6 @@ tile(5, 7, (c, r, ct, rt) => {
     gap: 0;
   }
 
-  /* ── Panel controls ── */
-  .panel-controls {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 8px;
-    height: 44px;
-    border-bottom: 1px solid var(--border-inner);
-    flex-shrink: 0;
-    background: var(--bg-sunken);
-  }
-
-  .panel-presets {
-    display: flex;
-    gap: 2px;
-  }
-
-  .preset-btn {
-    padding: 5px 8px;
-    font-size: 11px;
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    color: var(--text-5);
-    cursor: pointer;
-    transition: border-color .1s, color .1s, background .1s;
-  }
-  .preset-btn:hover { border-color: var(--text-4); color: var(--text-3); }
-  .preset-btn.active { border-color: var(--accent); color: var(--accent-text); background: var(--bg-selected); }
-
-  .code-pos-btn {
-    margin-left: auto;
-    padding: 5px 8px;
-    font-size: 11px;
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    color: var(--text-5);
-    cursor: pointer;
-    transition: border-color .1s, color .1s, background .1s;
-    white-space: nowrap;
-  }
-  .code-pos-btn:hover { border-color: var(--accent); color: var(--accent-text); }
-  .code-pos-btn.active { border-color: var(--accent); color: var(--accent-text); background: var(--bg-selected); }
-
   /* ── Tab bar ── */
   .tab-bar {
     display: flex;
@@ -1991,181 +1788,6 @@ tile(5, 7, (c, r, ct, rt) => {
     transition: background .15s;
   }
   .insert-btn:hover { background: color-mix(in srgb, var(--accent) 25%, var(--bg-selected)); }
-
-  /* ── Code editor ── */
-  .code-section {
-    padding: 0;
-  }
-
-  .code-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 7px 12px;
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border-inner);
-  }
-
-  .code-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .12em;
-    color: var(--accent);
-  }
-
-  .code-color-pick {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    margin-right: 4px;
-  }
-
-  .code-color-hex {
-    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
-    font-size: 10px;
-    color: var(--text-4);
-    letter-spacing: .04em;
-  }
-
-  .code-actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-  }
-
-  .code-tool-btn {
-    background: none;
-    border: none;
-    color: var(--text-6);
-    font-size: 10px;
-    font-weight: 500;
-    cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 3px;
-    letter-spacing: .03em;
-    transition: color .1s, background .1s;
-  }
-  .code-tool-btn:hover { color: var(--text-2); background: var(--bg-hover); }
-  .code-tool-btn.active { color: var(--accent-text); }
-
-  .expand-btn { font-size: 13px; }
-
-  .code-statusbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 12px;
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border-inner);
-    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
-    font-size: 10px;
-  }
-  .status-ok   { color: var(--text-ok); }
-  .status-err  { color: var(--text-err); }
-  .status-idle { color: var(--text-7); }
-  .status-lines { margin-left: auto; color: var(--text-7); }
-
-  .error-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    padding: 6px 12px;
-    background: var(--bg-error);
-    border-bottom: 1px solid var(--border-inner);
-  }
-
-  .error-line {
-    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
-    font-size: 10px;
-    color: var(--text-err);
-    padding: 3px 0;
-    word-break: break-all;
-    border-bottom: 1px solid var(--border-error);
-  }
-  .error-line:last-child { border-bottom: none; }
-
-  /* ── API Reference ── */
-  .api-ref {
-    background: var(--bg-sunken);
-  }
-
-  .api-ref-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 7px 12px;
-    border-top: 1px solid var(--border-inner);
-    color: var(--text-6);
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    cursor: pointer;
-    transition: color .1s, background .1s;
-    user-select: none;
-  }
-  .api-ref-toggle:hover { color: var(--text-3); background: var(--bg-panel); }
-
-  .api-chevron { font-size: 9px; }
-
-  .api-ref-body {
-    padding: 6px 12px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .api-snip {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 5px 8px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border-inner);
-    border-radius: 4px;
-    cursor: pointer;
-    text-align: left;
-    transition: border-color .1s, background .1s;
-  }
-  .api-snip:hover { border-color: var(--accent); background: var(--bg-selected); }
-
-  .api-snip-name {
-    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
-    font-size: 11px;
-    color: var(--accent-text);
-    font-weight: 600;
-    flex-shrink: 0;
-  }
-
-  .api-snip-sig {
-    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
-    font-size: 9px;
-    color: var(--text-7);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .api-consts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 3px;
-    margin-top: 4px;
-  }
-
-  .api-const-btn {
-    padding: 2px 7px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border-inner);
-    border-radius: 3px;
-    color: var(--text-5);
-    font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
-    font-size: 10px;
-    cursor: pointer;
-    transition: border-color .1s, color .1s, background .1s;
-  }
-  .api-const-btn:hover { border-color: var(--accent); color: var(--accent-text); background: var(--bg-selected); }
 
   /* ── Shader effects ── */
   .fx-row {
