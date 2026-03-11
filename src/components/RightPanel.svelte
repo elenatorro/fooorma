@@ -48,7 +48,7 @@
     activeLayerId: string | null
     activeShapeId: string | null
     selectedShapeIds: string[]
-    activeTab: 'layers' | 'effects' | 'palettes' | 'samples'
+    activeTab: 'layers' | 'palettes' | 'samples'
     onTabChange: (t: 'layers' | 'effects' | 'palettes' | 'samples') => void
     onAddLayer: () => void
     onSelectLayer: (id: string) => void
@@ -521,11 +521,6 @@ repeat(30, (i, t) => {
       class:active={activeTab === 'palettes'}
       onclick={() => onTabChange('palettes')}
     >Palettes</button>
-    <button
-      class="tab-btn"
-      class:active={activeTab === 'effects'}
-      onclick={() => onTabChange('effects')}
-    >Effects</button>
     <button
       class="tab-btn"
       class:active={activeTab === 'samples'}
@@ -1035,6 +1030,143 @@ repeat(30, (i, t) => {
           {/if}
         {/if}
       </section>
+
+      <!-- Per-shape shaders -->
+      <section class="section">
+        <h2 class="section-title">Shaders</h2>
+        {@const shadowFx = activeShape.effects?.find(e => e.type === 'shadow')}
+        {@const blurFx   = activeShape.effects?.find(e => e.type === 'blur')}
+        {@const bevelFx  = activeShape.effects?.find(e => e.type === 'bevel')}
+        {@const noiseFx  = activeShape.effects?.find(e => e.type === 'noise')}
+        {@const warpFx   = activeShape.effects?.find(e => e.type === 'warp')}
+
+        <!-- Shadow -->
+        <div class="fx-row">
+          <input type="checkbox" id="fx-shadow" checked={!!shadowFx}
+            onchange={() => toggleFx('shadow', { color: '#000000', opacity: 0.5, blur: 10, offsetX: 0, offsetY: 4 })} />
+          <label for="fx-shadow" class="fx-label">Drop Shadow</label>
+        </div>
+        {#if shadowFx}
+          <div class="fx-params">
+            <div class="prop-row">
+              <label class="prop-label">Color</label>
+              <ColorPicker hex={shadowFx.color ?? '#000000'} showOpacity={false}
+                onChange={(h) => setFx('shadow', { color: h })} />
+            </div>
+            {#each [
+              { id: 'sh-op', label: 'Opacity', key: 'opacity', min: 0,   max: 1,  step: 0.01, val: shadowFx.opacity ?? 0.5 },
+              { id: 'sh-bl', label: 'Blur',    key: 'blur',    min: 0,   max: 40, step: 1,    val: shadowFx.blur    ?? 10  },
+              { id: 'sh-ox', label: 'X',       key: 'offsetX', min: -40, max: 40, step: 1,    val: shadowFx.offsetX ?? 0   },
+              { id: 'sh-oy', label: 'Y',       key: 'offsetY', min: -40, max: 40, step: 1,    val: shadowFx.offsetY ?? 4   },
+            ] as p}
+              <SliderRow id={p.id} label={p.label} min={p.min} max={p.max} step={p.step} value={p.val}
+                onchange={(v) => setFx('shadow', { [p.key]: v })}
+              />
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Blur (not available for 3D shapes — too expensive) -->
+        {#if activeShape.type !== 'cube' && activeShape.type !== 'sphere' && activeShape.type !== 'cylinder' && activeShape.type !== 'torus'}
+        <div class="fx-row">
+          <input type="checkbox" id="fx-blur" checked={!!blurFx}
+            onchange={() => toggleFx('blur', { blur: 4 })} />
+          <label for="fx-blur" class="fx-label">Blur</label>
+        </div>
+        {#if blurFx}
+          <div class="fx-params">
+            <SliderRow id="bl-am" label="Amount" min={0} max={20} step={0.5}
+              value={blurFx.blur ?? 4} onchange={(v) => setFx('blur', { blur: v })} />
+          </div>
+        {/if}
+        {/if}
+
+        <!-- Bevel -->
+        <div class="fx-row">
+          <input type="checkbox" id="fx-bevel" checked={!!bevelFx}
+            onchange={() => toggleFx('bevel', { opacity: 0.6 })} />
+          <label for="fx-bevel" class="fx-label">Bevel</label>
+        </div>
+        {#if bevelFx}
+          <div class="fx-params">
+            <SliderRow id="bv-op" label="Intensity" min={0} max={1} step={0.01}
+              value={bevelFx.opacity ?? 0.6} onchange={(v) => setFx('bevel', { opacity: v })} />
+          </div>
+        {/if}
+
+        <!-- Noise -->
+        <div class="fx-row">
+          <input type="checkbox" id="fx-noise" checked={!!noiseFx}
+            onchange={() => toggleFx('noise', { amount: 0.3 })} />
+          <label for="fx-noise" class="fx-label">Noise</label>
+        </div>
+        {#if noiseFx}
+          <div class="fx-params">
+            <SliderRow id="ns-am" label="Amount" min={0} max={1} step={0.01}
+              value={noiseFx.amount ?? 0.3} onchange={(v) => setFx('noise', { amount: v })} />
+          </div>
+        {/if}
+
+        <!-- Warp -->
+        <div class="fx-row">
+          <input type="checkbox" id="fx-warp" checked={!!warpFx}
+            onchange={() => toggleFx('warp', { amount: 8, freq: 0.05 })} />
+          <label for="fx-warp" class="fx-label">Warp</label>
+        </div>
+        {#if warpFx}
+          <div class="fx-params">
+            {#each [
+              { id: 'wp-am', label: 'Strength',  key: 'amount', min: 0,     max: 40,  step: 0.5,   val: warpFx.amount ?? 8    },
+              { id: 'wp-fr', label: 'Frequency', key: 'freq',   min: 0.005, max: 0.2, step: 0.005, val: warpFx.freq   ?? 0.05 },
+            ] as p}
+              <SliderRow id={p.id} label={p.label} min={p.min} max={p.max} step={p.step} value={p.val}
+                onchange={(v) => setFx('warp', { [p.key]: v })}
+              />
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Materials (3D shapes only) -->
+        {#if activeShape.type === 'cube' || activeShape.type === 'sphere' || activeShape.type === 'cylinder' || activeShape.type === 'torus'}
+          {@const materialFx = activeShape.effects?.find(e => e.type === 'material')}
+          {@const activeMat = materialFx?.material ?? null}
+          {#each [
+            { id: 'fx-metal',   mat: 'metal' as Material3D,   label: 'Metal',   r: 'Roughness', i: 'Reflectivity' },
+            { id: 'fx-plastic', mat: 'plastic' as Material3D, label: 'Plastic', r: 'Roughness', i: 'Glossiness' },
+            { id: 'fx-marble',  mat: 'marble' as Material3D,  label: 'Marble',  r: 'Veins',     i: 'Polish' },
+            { id: 'fx-glass',   mat: 'glass' as Material3D,   label: 'Glass',   r: 'Roughness', i: 'Transparency' },
+          ] as m}
+            <div class="fx-row">
+              <input type="checkbox" id={m.id} checked={activeMat === m.mat}
+                onchange={() => {
+                  if (activeMat === m.mat) {
+                    if (!activeLayer || !activeShape) return
+                    onUpdateShape(activeLayer.id, activeShape.id, {
+                      effects: (activeShape.effects ?? []).filter(e => e.type !== 'material'),
+                    })
+                  } else {
+                    if (!activeLayer || !activeShape) return
+                    const others = (activeShape.effects ?? []).filter(e => e.type !== 'material')
+                    onUpdateShape(activeLayer.id, activeShape.id, {
+                      effects: [...others, { type: 'material', material: m.mat, roughness: 0.5, intensity: 0.5 } as ShapeEffect],
+                    })
+                  }
+                }} />
+              <label for={m.id} class="fx-label">{m.label}</label>
+            </div>
+            {#if activeMat === m.mat && materialFx}
+              <div class="fx-params">
+                <SliderRow id={`${m.id}-r`} label={m.r} min={0} max={1} step={0.01}
+                  value={materialFx.roughness ?? 0.5}
+                  onchange={(v) => setFx('material', { roughness: v })} />
+                <SliderRow id={`${m.id}-i`} label={m.i} min={0} max={1} step={0.01}
+                  value={materialFx.intensity ?? 0.5}
+                  onchange={(v) => setFx('material', { intensity: v })} />
+              </div>
+            {/if}
+          {/each}
+        {/if}
+      </section>
     {/if}
   {/if}
 
@@ -1149,155 +1281,6 @@ repeat(30, (i, t) => {
         &#125;)</code>
       </p>
     </section>
-  {/if}
-
-  <!-- ── Effects tab ── -->
-  {#if activeTab === 'effects'}
-
-    <!-- Per-shape shaders -->
-    <section class="section">
-      <h2 class="section-title">Shaders</h2>
-      {#if activeShape && activeLayer}
-        {@const shadowFx = activeShape.effects?.find(e => e.type === 'shadow')}
-        {@const blurFx   = activeShape.effects?.find(e => e.type === 'blur')}
-        {@const bevelFx  = activeShape.effects?.find(e => e.type === 'bevel')}
-        {@const noiseFx  = activeShape.effects?.find(e => e.type === 'noise')}
-        {@const warpFx   = activeShape.effects?.find(e => e.type === 'warp')}
-
-        <!-- Shadow -->
-        <div class="fx-row">
-          <input type="checkbox" id="fx-shadow" checked={!!shadowFx}
-            onchange={() => toggleFx('shadow', { color: '#000000', opacity: 0.5, blur: 10, offsetX: 0, offsetY: 4 })} />
-          <label for="fx-shadow" class="fx-label">Drop Shadow</label>
-        </div>
-        {#if shadowFx}
-          <div class="fx-params">
-            <div class="prop-row">
-              <label class="prop-label">Color</label>
-              <ColorPicker hex={shadowFx.color ?? '#000000'} showOpacity={false}
-                onChange={(h) => setFx('shadow', { color: h })} />
-            </div>
-            {#each [
-              { id: 'sh-op', label: 'Opacity', key: 'opacity', min: 0,   max: 1,  step: 0.01, val: shadowFx.opacity ?? 0.5 },
-              { id: 'sh-bl', label: 'Blur',    key: 'blur',    min: 0,   max: 40, step: 1,    val: shadowFx.blur    ?? 10  },
-              { id: 'sh-ox', label: 'X',       key: 'offsetX', min: -40, max: 40, step: 1,    val: shadowFx.offsetX ?? 0   },
-              { id: 'sh-oy', label: 'Y',       key: 'offsetY', min: -40, max: 40, step: 1,    val: shadowFx.offsetY ?? 4   },
-            ] as p}
-              <SliderRow id={p.id} label={p.label} min={p.min} max={p.max} step={p.step} value={p.val}
-                onchange={(v) => setFx('shadow', { [p.key]: v })}
-              />
-            {/each}
-          </div>
-        {/if}
-
-        <!-- Blur (not available for 3D shapes — too expensive) -->
-        {#if activeShape.type !== 'cube' && activeShape.type !== 'sphere' && activeShape.type !== 'cylinder' && activeShape.type !== 'torus'}
-        <div class="fx-row">
-          <input type="checkbox" id="fx-blur" checked={!!blurFx}
-            onchange={() => toggleFx('blur', { blur: 4 })} />
-          <label for="fx-blur" class="fx-label">Blur</label>
-        </div>
-        {#if blurFx}
-          <div class="fx-params">
-            <SliderRow id="bl-am" label="Amount" min={0} max={20} step={0.5}
-              value={blurFx.blur ?? 4} onchange={(v) => setFx('blur', { blur: v })} />
-          </div>
-        {/if}
-        {/if}
-
-        <!-- Bevel -->
-        <div class="fx-row">
-          <input type="checkbox" id="fx-bevel" checked={!!bevelFx}
-            onchange={() => toggleFx('bevel', { opacity: 0.6 })} />
-          <label for="fx-bevel" class="fx-label">Bevel</label>
-        </div>
-        {#if bevelFx}
-          <div class="fx-params">
-            <SliderRow id="bv-op" label="Intensity" min={0} max={1} step={0.01}
-              value={bevelFx.opacity ?? 0.6} onchange={(v) => setFx('bevel', { opacity: v })} />
-          </div>
-        {/if}
-
-        <!-- Noise -->
-        <div class="fx-row">
-          <input type="checkbox" id="fx-noise" checked={!!noiseFx}
-            onchange={() => toggleFx('noise', { amount: 0.3 })} />
-          <label for="fx-noise" class="fx-label">Noise</label>
-        </div>
-        {#if noiseFx}
-          <div class="fx-params">
-            <SliderRow id="ns-am" label="Amount" min={0} max={1} step={0.01}
-              value={noiseFx.amount ?? 0.3} onchange={(v) => setFx('noise', { amount: v })} />
-          </div>
-        {/if}
-
-        <!-- Warp -->
-        <div class="fx-row">
-          <input type="checkbox" id="fx-warp" checked={!!warpFx}
-            onchange={() => toggleFx('warp', { amount: 8, freq: 0.05 })} />
-          <label for="fx-warp" class="fx-label">Warp</label>
-        </div>
-        {#if warpFx}
-          <div class="fx-params">
-            {#each [
-              { id: 'wp-am', label: 'Strength',  key: 'amount', min: 0,     max: 40,  step: 0.5,   val: warpFx.amount ?? 8    },
-              { id: 'wp-fr', label: 'Frequency', key: 'freq',   min: 0.005, max: 0.2, step: 0.005, val: warpFx.freq   ?? 0.05 },
-            ] as p}
-              <SliderRow id={p.id} label={p.label} min={p.min} max={p.max} step={p.step} value={p.val}
-                onchange={(v) => setFx('warp', { [p.key]: v })}
-              />
-            {/each}
-          </div>
-        {/if}
-
-        <!-- Materials (3D shapes only) -->
-        {#if activeShape.type === 'cube' || activeShape.type === 'sphere' || activeShape.type === 'cylinder' || activeShape.type === 'torus'}
-          {@const materialFx = activeShape.effects?.find(e => e.type === 'material')}
-          {@const activeMat = materialFx?.material ?? null}
-          {#each [
-            { id: 'fx-metal',   mat: 'metal' as Material3D,   label: 'Metal',   r: 'Roughness', i: 'Reflectivity' },
-            { id: 'fx-plastic', mat: 'plastic' as Material3D, label: 'Plastic', r: 'Roughness', i: 'Glossiness' },
-            { id: 'fx-marble',  mat: 'marble' as Material3D,  label: 'Marble',  r: 'Veins',     i: 'Polish' },
-            { id: 'fx-glass',   mat: 'glass' as Material3D,   label: 'Glass',   r: 'Roughness', i: 'Transparency' },
-          ] as m}
-            <div class="fx-row">
-              <input type="checkbox" id={m.id} checked={activeMat === m.mat}
-                onchange={() => {
-                  if (activeMat === m.mat) {
-                    // Remove material effect
-                    if (!activeLayer || !activeShape) return
-                    onUpdateShape(activeLayer.id, activeShape.id, {
-                      effects: (activeShape.effects ?? []).filter(e => e.type !== 'material'),
-                    })
-                  } else {
-                    // Replace any existing material with this one
-                    if (!activeLayer || !activeShape) return
-                    const others = (activeShape.effects ?? []).filter(e => e.type !== 'material')
-                    onUpdateShape(activeLayer.id, activeShape.id, {
-                      effects: [...others, { type: 'material', material: m.mat, roughness: 0.5, intensity: 0.5 } as ShapeEffect],
-                    })
-                  }
-                }} />
-              <label for={m.id} class="fx-label">{m.label}</label>
-            </div>
-            {#if activeMat === m.mat && materialFx}
-              <div class="fx-params">
-                <SliderRow id={`${m.id}-r`} label={m.r} min={0} max={1} step={0.01}
-                  value={materialFx.roughness ?? 0.5}
-                  onchange={(v) => setFx('material', { roughness: v })} />
-                <SliderRow id={`${m.id}-i`} label={m.i} min={0} max={1} step={0.01}
-                  value={materialFx.intensity ?? 0.5}
-                  onchange={(v) => setFx('material', { intensity: v })} />
-              </div>
-            {/if}
-          {/each}
-        {/if}
-
-      {:else}
-        <p class="fx-hint">Select a shape in the Layers tab to apply shaders.</p>
-      {/if}
-    </section>
-
   {/if}
 
   <!-- ── Samples tab ── -->

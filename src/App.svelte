@@ -227,8 +227,12 @@
   const resolvedLayers = $derived(
     layers.map(layer => {
       if (layer.mode !== 'code') return layer
-      const { shapes } = evaluateQuery(layer.query, artW, artH, allPalettes)
-      return { ...layer, shapes }
+      try {
+        const { shapes } = evaluateQuery(layer.query, artW, artH, allPalettes)
+        return { ...layer, shapes }
+      } catch {
+        return { ...layer, shapes: [] }
+      }
     })
   )
 
@@ -509,6 +513,8 @@
   }
 
   function loop(time: number) {
+    // Re-acquire context if it was lost (Firefox can drop it under memory pressure)
+    if (dirty && canvas2d && !ctx2d) ctx2d = canvas2d.getContext('2d')
     if (dirty && ctx2d && canvas2d) {
       dirty = false
       // Scale canvas buffer to match physical pixels at current zoom,
@@ -517,7 +523,10 @@
       // from growing unboundedly at high zoom levels (which would crash the tab).
       // Visual zoom (CSS transform on the artboard) is unaffected by this cap.
       const dpr         = window.devicePixelRatio || 1
-      const renderScale = Math.min(zoom * dpr, MAX_RENDER_SCALE)
+      // Cap so the canvas bitmap never exceeds browser limits (~16384px per side)
+      const maxDim      = Math.max(artW, artH)
+      const dimCap      = maxDim > 0 ? 16384 / maxDim : MAX_RENDER_SCALE
+      const renderScale = Math.min(zoom * dpr, MAX_RENDER_SCALE, dimCap)
       const w = Math.round(artW * renderScale)
       const h = Math.round(artH * renderScale)
       if (canvas2d.width !== w || canvas2d.height !== h) {

@@ -67,6 +67,79 @@ Each sketch is a `SketchDef` with:
 - Viewport = window width − 260 px (right panel) − margins
 - Zoom: 0.05–20×, pan via Space+drag or scroll
 
+### Coordinate & Sizing Model
+
+- **Position**: `x` is 0–1 fraction of artW, `y` is 0–1 fraction of artH. `(0.5, 0.5)` = center.
+- **Size**: `w` and `h` are both in **artW-fractions** (uniform space). This means equal w/h values always produce a square, regardless of artboard aspect ratio.
+- **Dimension helpers** in the code API:
+  - `w(v)` / `width(v)` — size as fraction of artboard width (identity, since sizes are already width-relative)
+  - `h(v)` / `height(v)` — size as fraction of artboard height (converts to uniform space: `v * H / W`)
+  - Example: `rect(0.5, 0.5, w(0.3), h(0.5))` = 30% of width × 50% of height
+  - Example: `rect(0.5, 0.5, 0.3, 0.3)` = always a square (300×300 on a 1000px-wide artboard)
+
+## Code API — Loop & Tile Functions
+
+The query language (`src/lib/query/index.ts`) exposes these iteration/distribution functions:
+
+| Function | Signature | Purpose |
+|----------|-----------|---------|
+| `repeat` | `(n, (i, t) => {})` | Loop n times. `i`: index, `t`: normalized 0→1 |
+| `grid` | `(cols, rows, (c, r, ct, rt) => {})` | Iterate over a grid. Shapes positioned manually |
+| `wave` | `(n, amp, freq, (i, t, x, y) => {})` | Distribute along a sine wave |
+| `circular` | `(n, cx, cy, r, (i, t, x, y, angle) => {})` | Distribute around a circle |
+| `tile` | `(cols, rows, (c, r, ct, rt) => {}, opts?)` | **Tile grid**: shapes drawn in local 0–1 space, auto-placed in cells |
+
+### Tile System
+
+`tile()` is the primary tool for repeating patterns. Unlike `grid()`, shapes inside a `tile()` callback are drawn in **tile-local normalized space** (0–1) and automatically repositioned into each grid cell.
+
+```js
+// Create a 4×6 grid of tiles, each containing a rect and circle
+tile(4, 6, (c, r, ct, rt) => {
+  rect(0.5, 0.5, 0.8, 0.8, palette('Neon', c + r), 0.85)
+  ellipse(0.5, 0.5, 0.3, 0.3, '#fff', 0.4)
+  if (c % 2) mirror('x')   // flip every other column
+}, { gapX: 0.005, gapY: 0.005 })
+```
+
+**Callback params:** `c` (col index), `r` (row index), `ct` (col normalized 0–1), `rt` (row normalized 0–1)
+
+**`mirror(axis)`** — call inside a tile callback to flip shapes: `'x'` (horizontal), `'y'` (vertical), `'xy'` (both). Useful for alternating tile orientation.
+
+**Options:** `{ offsetX, offsetY, gapX, gapY }` — margins and inter-tile spacing.
+
+**Implementation:** `tile()` captures shapes drawn in the callback, remaps their `geom`, `pts`, and `transform` from local to cell coordinates, then pushes them to the main shapes array. Supports all shape types including groups, pts-based shapes (line/curve/triangle/spline), and arcs.
+
+### Stamp System
+
+Stamps are reusable shape groups saved as code snippets. They are stored as `Pattern` objects with a `code` field.
+
+```js
+// Place a saved stamp
+stamp('Diamond')
+
+// With transforms (scale around center, rotate, mirror)
+stamp('Diamond', { scale: 0.8, rotate: 45, mirror: 'x' })
+
+// Inside tile — stamp shapes are in local 0–1 space, tile remaps them
+tile(4, 4, (c, r) => {
+  stamp('Diamond', { scale: 0.6 })
+  if (c % 2) mirror('x')
+})
+```
+
+**Saving stamps:** From the Patterns tab — either from selected shapes (manual mode) or from current code (code mode). Stamps are saved to `customPatterns` with `code` set.
+
+**Persistence:** Stamps are serialized in `.forma` files as plain code blocks and auto-saved to localStorage:
+```
+// @stamp "Diamond"
+rect(0.5, 0.5, 0.3, 0.3, '#8b5cf6', 0.85)
+ellipse(0.5, 0.3, 0.1, 0.1, '#fff', 0.5)
+// @endstamp
+```
+
+**Implementation:** `stamp()` in `evaluateQuery()` looks up the pattern by name, evaluates its code via a recursive `evaluateQuery()` call, then applies scale/rotate/mirror transforms to the resulting shapes before pushing them into the main shapes array.
+
 ## Shape / Model Consistency Rule
 
 **Any new shape type, shape property, or model change must be reflected across all three surfaces simultaneously — no exceptions:**
