@@ -87,22 +87,33 @@ The query language (`src/lib/query/index.ts`) exposes these iteration/distributi
 | `grid` | `(cols, rows, (c, r, ct, rt) => {})` | Iterate over a grid. Shapes positioned manually |
 | `wave` | `(n, amp, freq, (i, t, x, y) => {})` | Distribute along a sine wave |
 | `circular` | `(n, cx, cy, r, (i, t, x, y, angle) => {})` | Distribute around a circle |
-| `tile` | `(cols, rows, (c, r, ct, rt) => {}, opts?)` | **Tile grid**: shapes drawn in local 0–1 space, auto-placed in cells |
+| `tile` | `(cols, cb, opts?)` or `(cols, rows, cb, opts?)` | **Tile grid**: shapes drawn in local 0–1 space, auto-placed in cells |
 
 ### Tile System
 
 `tile()` is the primary tool for repeating patterns. Unlike `grid()`, shapes inside a `tile()` callback are drawn in **tile-local normalized space** (0–1) and automatically repositioned into each grid cell.
 
+Two signatures:
+- **`tile(cols, cb, opts?)`** — square tiles. Rows auto-computed from artboard aspect ratio (`cols × artH/artW`). Tiles are always square and adapt to the viewport.
+- **`tile(cols, rows, cb, opts?)`** — explicit grid. Cells may be non-square when cols/rows don't match the aspect ratio.
+
 ```js
-// Create a 4×6 grid of tiles, each containing a rect and circle
+// Square tiles — rows auto-computed, always perfect squares
+tile(5, (c, r, ct, rt) => {
+  rect(0.5, 0.5, 0.9, 0.9, palette('Neon', c + r), 0.85)
+  ellipse(0.5, 0.5, 0.3, 0.3, '#fff', 0.4)
+  if (c % 2) mirror('x')
+})
+
+// Explicit grid with gaps
 tile(4, 6, (c, r, ct, rt) => {
   rect(0.5, 0.5, 0.8, 0.8, palette('Neon', c + r), 0.85)
-  ellipse(0.5, 0.5, 0.3, 0.3, '#fff', 0.4)
-  if (c % 2) mirror('x')   // flip every other column
 }, { gapX: 0.005, gapY: 0.005 })
 ```
 
 **Callback params:** `c` (col index), `r` (row index), `ct` (col normalized 0–1), `rt` (row normalized 0–1)
+
+**Sizing:** Both `w` and `h` scale by cell width, so `w=h` is always a perfect circle/square regardless of cell aspect ratio.
 
 **`mirror(axis)`** — call inside a tile callback to flip shapes: `'x'` (horizontal), `'y'` (vertical), `'xy'` (both). Useful for alternating tile orientation.
 
@@ -122,7 +133,7 @@ stamp('Diamond')
 stamp('Diamond', { scale: 0.8, rotate: 45, mirror: 'x' })
 
 // Inside tile — stamp shapes are in local 0–1 space, tile remaps them
-tile(4, 4, (c, r) => {
+tile(4, (c, r) => {
   stamp('Diamond', { scale: 0.6 })
   if (c % 2) mirror('x')
 })
