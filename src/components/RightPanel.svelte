@@ -173,8 +173,8 @@ repeat(14, (i, a) => {
     {
       name: 'Dot Grid',
       desc: 'Noise-sized grid of circles from a palette',
-      code: `// tile(cols, rows, (c, r, ct, rt) => ...) — shapes in tile-local 0–1 space
-tile(14, 18, (c, r, ct, rt) => {
+      code: `// tile(cols, cb) — square tiles, rows auto-computed from aspect ratio
+tile(14, (c, r, ct, rt) => {
   const n = nz(ct * 4, rt * 4)
   const s = lerp(0.1, 0.4, n)
   ellipse(0.5, 0.5, s, s, palette('Neon', c + r), lerp(0.35, 1, n))
@@ -228,7 +228,7 @@ circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
     {
       name: 'Noise Tiles',
       desc: 'Rotated rectangles sized by noise',
-      code: `tile(8, 10, (c, r, ct, rt) => {
+      code: `tile(8, (c, r, ct, rt) => {
   const n = nz(ct * 3, rt * 3)
   const s = lerp(0.4, 0.9, n)
   rect(0.5, 0.5, s, s,
@@ -248,7 +248,7 @@ wave(40, 0.28, 1.5, (i, t, x, y) => {
     {
       name: 'Metal Cubes',
       desc: 'Metallic cubes in a grid with sharp highlights',
-      code: `tile(5, 6, (c, r, ct, rt) => {
+      code: `tile(5, (c, r, ct, rt) => {
   const n = nz(ct * 3, rt * 3)
   const s = lerp(0.4, 0.85, n)
   cube(0.5, 0.5, s, palette('Neon', c + r), lerp(0.6, 1, n),
@@ -301,8 +301,8 @@ repeat(30, (i, t) => {
     {
       name: 'Tile Mosaic',
       desc: 'Repeating tile with mirrored alternation',
-      code: `// tile(cols, rows, cb) — shapes drawn in tile-local 0–1 space
-tile(5, 7, (c, r, ct, rt) => {
+      code: `// tile(cols, cb) — square tiles, auto-adapted to viewport
+tile(5, (c, r, ct, rt) => {
   rect(0.5, 0.5, 0.9, 0.9, palette('Aurora', c + r * 2), 0.7)
   ellipse(0.25, 0.25, 0.3, 0.3, '#fff', 0.4)
   ellipse(0.75, 0.75, 0.2, 0.2, '#000', 0.3)
@@ -312,7 +312,7 @@ tile(5, 7, (c, r, ct, rt) => {
     {
       name: 'Tile Weave',
       desc: 'Interlocking tile pattern with per-cell variation',
-      code: `tile(6, 8, (c, r, ct, rt) => {
+      code: `tile(6, (c, r, ct, rt) => {
   const n = nz(ct * 3, rt * 3)
   rect(0.5, 0.5, 0.85, 0.85, palette('Ocean', c + r), lerp(0.4, 0.9, n))
   line(0, 0.5, 1, 0.5, '#fff', 0.2 + n * 0.3, 0.01)
@@ -1449,7 +1449,7 @@ tile(5, 7, (c, r, ct, rt) => {
       <p class="palette-hint">Use stamps in code mode:<br>
         <code>stamp('MyStamp')<br>
           // inside tile:<br>
-          tile(4, 4, (c, r) =&gt; &#123;<br>
+          tile(4, (c, r) =&gt; &#123;<br>
           &nbsp;&nbsp;stamp('MyStamp', &#123; scale: 0.8 &#125;)<br>
           &#125;)</code>
       </p>

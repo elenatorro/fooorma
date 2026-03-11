@@ -505,9 +505,14 @@ export function evaluateQuery(
   }
 
   // ── Tile helper ─────────────────────────────────────────────────────────
-  // tile(cols, rows, cb(col, row, colNorm, rowNorm))
+  // tile(cols, cb)             — square tiles, rows auto-computed from aspect ratio
+  // tile(cols, rows, cb)       — explicit grid (cells may be non-square)
+  // tile(cols, cb, opts?)      — square tiles with options
+  // tile(cols, rows, cb, opts?)— explicit grid with options
+  //
   // Shapes inside the callback are drawn in tile-local 0–1 space.
   // They are automatically repositioned into each grid cell.
+  // w and h always scale uniformly (by cell width), so w=h is always a circle.
   // Inside the callback, use mirror('x'), mirror('y'), or mirror('xy') to
   // flip subsequently drawn shapes within the tile.
   interface TileOpts { offsetX?: number; offsetY?: number; gapX?: number; gapY?: number }
@@ -521,10 +526,8 @@ export function evaluateQuery(
   }
 
   /** Remap a shape's coordinates from tile-local 0–1 space to the grid cell.
-   *  h-sizes need aspect correction: geom.h is in artW-fractions, but cell height
-   *  is in artH-fractions. Multiply by artH/artW so local h=0.5 fills 50% of
-   *  cell height (not 50% of cell width). */
-  const _aspect = artH / artW
+   *  Both w and h scale by tw (cell width) so that equal local w/h always
+   *  produces a perfect circle/square regardless of cell aspect ratio. */
 
   function remapShape(s: Shape, ox: number, oy: number, tw: number, th: number, mx: boolean, my: boolean): Shape {
     const out = { ...s }
@@ -532,7 +535,7 @@ export function evaluateQuery(
     let lx = s.geom.x, ly = s.geom.y, lw = s.geom.w, lh = s.geom.h
     if (mx) lx = 1 - lx
     if (my) ly = 1 - ly
-    out.geom = { x: ox + lx * tw, y: oy + ly * th, w: lw * tw, h: lh * th * _aspect }
+    out.geom = { x: ox + lx * tw, y: oy + ly * th, w: lw * tw, h: lh * tw }
 
     // Remap pts (line, curve, triangle, spline, arc)
     if (s.pts) {
@@ -573,16 +576,31 @@ export function evaluateQuery(
 
   const tile = (
     cols: number,
-    rows: number,
-    cb: (col: number, row: number, ct: number, rt: number) => void,
+    rows: number | ((col: number, row: number, ct: number, rt: number) => void),
+    cb?: ((col: number, row: number, ct: number, rt: number) => void) | TileOpts,
     opts?: TileOpts,
   ): void => {
-    const nc = Math.min(Math.floor(cols), 200)
-    const nr = Math.min(Math.floor(rows), 200)
-    const gx = opts?.gapX ?? 0
-    const gy = opts?.gapY ?? 0
-    const baseOx = opts?.offsetX ?? 0
-    const baseOy = opts?.offsetY ?? 0
+    // tile(cols, cb) — square tiles, auto-compute rows from aspect ratio
+    let _cols = cols
+    let _rows: number
+    let _cb: (col: number, row: number, ct: number, rt: number) => void
+    let _opts: TileOpts | undefined
+    if (typeof rows === 'function') {
+      _cb = rows
+      _opts = typeof cb === 'object' ? cb as TileOpts : undefined
+      const aspect = artH / artW
+      _rows = Math.round(_cols * aspect)
+    } else {
+      _rows = rows
+      _cb = cb as (col: number, row: number, ct: number, rt: number) => void
+      _opts = opts
+    }
+    const nc = Math.min(Math.floor(_cols), 200)
+    const nr = Math.min(Math.floor(_rows), 200)
+    const gx = _opts?.gapX ?? 0
+    const gy = _opts?.gapY ?? 0
+    const baseOx = _opts?.offsetX ?? 0
+    const baseOy = _opts?.offsetY ?? 0
     const tw = nc > 0 ? (1 - baseOx * 2 - gx * (nc - 1)) / nc : 1
     const th = nr > 0 ? (1 - baseOy * 2 - gy * (nr - 1)) / nr : 1
 
@@ -597,7 +615,7 @@ export function evaluateQuery(
         // Capture shapes drawn inside the callback
         _tileCtx = { ox: cellOx, oy: cellOy, tw, th, mx: false, my: false }
         const startIdx = shapes.length
-        cb(c, r, ct, rt)
+        _cb(c, r, ct, rt)
         const localShapes = shapes.splice(startIdx)
         const { ox, oy, mx, my } = _tileCtx
         _tileCtx = null
