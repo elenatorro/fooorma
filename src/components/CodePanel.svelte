@@ -22,6 +22,7 @@
     onApplyFile,
     dock,
     onDockChange,
+    onHide,
     scope,
     onScopeChange,
     width,
@@ -42,6 +43,7 @@
     onApplyFile: (text: string) => void
     dock: 'left' | 'bottom'
     onDockChange: (d: 'left' | 'bottom') => void
+    onHide: () => void
     scope: 'layer' | 'file'
     onScopeChange: (s: 'layer' | 'file') => void
     width: number
@@ -66,11 +68,13 @@
   const isCodeMode = $derived(activeLayer?.mode === 'code')
 
   // ── Layer scope: editor value ─────────────────────────────────────────────
+  // In manual mode, show the preserved query if it exists (keeps loops visible),
+  // otherwise fall back to shapesToCode for the current shapes
   const layerValue = $derived(
     activeLayer
       ? isCodeMode
         ? activeLayer.query
-        : shapesToCode(activeLayer.shapes)
+        : (activeLayer.query.trim() || shapesToCode(activeLayer.shapes))
       : ''
   )
   const layerResult = $derived(
@@ -218,6 +222,7 @@
       <button class="cp-btn" onclick={() => onDockChange(dock === 'left' ? 'bottom' : 'left')} title={dock === 'left' ? 'Dock bottom' : 'Dock left'}>
         {dock === 'left' ? '↓' : '←'}
       </button>
+      <button class="cp-btn" onclick={onHide} title="Hide code panel">✕</button>
     </div>
   </div>
 

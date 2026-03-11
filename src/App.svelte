@@ -95,6 +95,7 @@
   let resizeOrigin: { x: number; w: number } | null = null
 
   // ── Code panel ─────────────────────────────────────────────────────────────
+  let codePanelVisible = $state(localStorage.getItem('forma_code_visible') !== 'false')
   let codePanelDock  = $state<'left' | 'bottom'>((localStorage.getItem('forma_code_dock') as 'left' | 'bottom') ?? 'left')
   let codePanelW     = $state(parseInt(localStorage.getItem('forma_code_w') ?? '400') || 400)
   let codePanelH     = $state(parseInt(localStorage.getItem('forma_code_h') ?? '280') || 280)
@@ -122,10 +123,11 @@
   })
 
   $effect(() => {
-    const lw = codePanelDock === 'left' ? codePanelW : 0
-    const bh = codePanelDock === 'bottom' ? codePanelH : 0
+    const lw = codePanelVisible && codePanelDock === 'left' ? codePanelW : 0
+    const bh = codePanelVisible && codePanelDock === 'bottom' ? codePanelH : 0
     document.documentElement.style.setProperty('--code-panel-w', `${lw}px`)
     document.documentElement.style.setProperty('--code-panel-h', `${bh}px`)
+    localStorage.setItem('forma_code_visible', String(codePanelVisible))
     localStorage.setItem('forma_code_dock', codePanelDock)
     localStorage.setItem('forma_code_w', String(codePanelW))
     localStorage.setItem('forma_code_h', String(codePanelH))
@@ -943,35 +945,40 @@
   onDeletePattern={handleDeletePattern}
 />
 
-<CodePanel
-  {layers}
-  {activeLayerId}
-  {artW}
-  {artH}
-  palettes={allPalettes}
-  stamps={allPatterns.filter(p => p.code)}
-  {customPalettes}
-  customPatterns={customPatterns}
-  onSetQuery={handleSetQuery}
-  onSetMode={handleSetMode}
-  onApplyFile={handleApplyFile}
-  dock={codePanelDock}
-  onDockChange={(d) => { codePanelDock = d; updateVP() }}
-  scope={codeEditScope}
-  onScopeChange={(s) => { codeEditScope = s }}
-  width={codePanelW}
-  onWidthChange={(w) => { codePanelW = w; updateVP() }}
-  height={codePanelH}
-  onHeightChange={(h) => { codePanelH = h; updateVP() }}
-/>
+{#if codePanelVisible}
+  <CodePanel
+    {layers}
+    {activeLayerId}
+    {artW}
+    {artH}
+    palettes={allPalettes}
+    stamps={allPatterns.filter(p => p.code)}
+    {customPalettes}
+    customPatterns={customPatterns}
+    onSetQuery={handleSetQuery}
+    onSetMode={handleSetMode}
+    onApplyFile={handleApplyFile}
+    dock={codePanelDock}
+    onDockChange={(d) => { codePanelDock = d; updateVP() }}
+    onHide={() => { codePanelVisible = false; updateVP() }}
+    scope={codeEditScope}
+    onScopeChange={(s) => { codeEditScope = s }}
+    width={codePanelW}
+    onWidthChange={(w) => { codePanelW = w; updateVP() }}
+    height={codePanelH}
+    onHeightChange={(h) => { codePanelH = h; updateVP() }}
+  />
+{/if}
 
 <StatusBar
   {zoom}
   {cmykProof}
+  codeVisible={codePanelVisible}
   onZoom={stepZoom}
   onFit={fit}
   onReset={() => { zoom = 1; panX = 0; panY = 0 }}
   onToggleCmykProof={() => cmykProof = !cmykProof}
+  onToggleCode={() => { codePanelVisible = !codePanelVisible; updateVP() }}
 />
 
 <!-- Panel resize handle -->
