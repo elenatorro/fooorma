@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
-  import type { Layer, Shape, ShapeGeom } from './lib/layers/types'
+  import type { Layer, Pattern, Shape, ShapeGeom } from './lib/layers/types'
   import { renderLayers2D, applyTransform } from './lib/layers/renderer2d'
   import { evaluateQuery, shapesToCode } from './lib/query/index'
   import { encodeCmykTiff, applyCmykSoftProof } from './lib/export-cmyk-tiff'
@@ -44,6 +44,7 @@
   import Viewport        from './components/Viewport.svelte'
   import { serializeProject, parseProject } from './lib/persist/index'
   import { BUILTIN_PALETTES } from './lib/palettes/index'
+  import { BUILTIN_PATTERNS } from './lib/patterns/index'
   import type { Palette } from './lib/palettes/index'
   import { MIN_ZOOM, MAX_ZOOM, MAX_RENDER_SCALE } from './lib/viewport'
 
@@ -66,7 +67,7 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) return null
-      const data = JSON.parse(raw) as { layers: Layer[]; artW: number; artH: number; customPalettes: Palette[]; activeIdx: number }
+      const data = JSON.parse(raw) as { layers: Layer[]; artW: number; artH: number; customPalettes: Palette[]; customPatterns?: Pattern[]; activeIdx: number }
       if (!Array.isArray(data.layers)) return null
       return data
     } catch {
@@ -202,22 +203,26 @@
   let activeLayerId = $state<string | null>(_initActiveId)
   let activeShapeId = $state<string | null>(null)
   let selectedShapeIds = $state<string[]>([])
-  let activeTab = $state<'layers' | 'effects' | 'palettes' | 'samples'>('layers')
+  let activeTab = $state<'layers' | 'palettes' | 'patterns' | 'samples'>('layers')
 
   // ── Palettes ───────────────────────────────────────────────────────────────
   let customPalettes = $state<Palette[]>(_saved?.customPalettes ?? [])
+
+  // ── Patterns ──────────────────────────────────────────────────────────────
+  let customPatterns = $state<Pattern[]>(_saved?.customPatterns ?? [])
 
   // ── Autosave effect ────────────────────────────────────────────────────────
   let _saveTimer: ReturnType<typeof setTimeout> | undefined
   $effect(() => {
     const idx  = layers.findIndex(l => l.id === activeLayerId)
-    const data = JSON.stringify({ layers, artW, artH, customPalettes, activeIdx: idx < 0 ? layers.length - 1 : idx })
+    const data = JSON.stringify({ layers, artW, artH, customPalettes, customPatterns, activeIdx: idx < 0 ? layers.length - 1 : idx })
     clearTimeout(_saveTimer)
     _saveTimer = setTimeout(() => {
       try { localStorage.setItem(STORAGE_KEY, data) } catch { /* storage full or unavailable */ }
     }, 500)
   })
   const allPalettes  = $derived([...BUILTIN_PALETTES, ...customPalettes])
+  const allPatterns  = $derived([...BUILTIN_PATTERNS, ...customPatterns])
 
   const activeLayerShapes = $derived(
     layers.find(l => l.id === activeLayerId)?.shapes ?? []
@@ -228,7 +233,7 @@
     layers.map(layer => {
       if (layer.mode !== 'code') return layer
       try {
-        const { shapes } = evaluateQuery(layer.query, artW, artH, allPalettes)
+        const { shapes } = evaluateQuery(layer.query, artW, artH, allPalettes, allPatterns.filter(p => p.code))
         return { ...layer, shapes }
       } catch {
         return { ...layer, shapes: [] }
@@ -309,7 +314,7 @@
         // If the existing query produces the same shapes, keep it (preserves loops etc.)
         if (l.query.trim()) {
           try {
-            const fromQuery = flattenShapes(evaluateQuery(l.query, artW, artH, allPalettes).shapes)
+            const fromQuery = flattenShapes(evaluateQuery(l.query, artW, artH, allPalettes, allPatterns.filter(p => p.code)).shapes)
             if (shapeFingerprint(fromQuery) === shapeFingerprint(l.shapes)) {
               return { ...l, mode }
             }
@@ -319,7 +324,7 @@
         return { ...l, mode, query }
       } else {
         // code → manual: evaluate query and bake into layer.shapes
-        const raw = l.query.trim() ? evaluateQuery(l.query, artW, artH, allPalettes).shapes : l.shapes
+        const raw = l.query.trim() ? evaluateQuery(l.query, artW, artH, allPalettes, allPatterns.filter(p => p.code)).shapes : l.shapes
         return { ...l, mode, shapes: flattenShapes(raw) }
       }
     })
@@ -485,11 +490,24 @@
     customPalettes = customPalettes.filter(p => p.id !== id)
   }
 
+  function handleAddPattern(pattern: Pattern) {
+    customPatterns = [...customPatterns, { ...pattern, id: crypto.randomUUID() }]
+  }
+
+  function handleUpdatePattern(id: string, update: Partial<Pattern>) {
+    customPatterns = customPatterns.map(p => p.id === id ? { ...p, ...update } : p)
+  }
+
+  function handleDeletePattern(id: string) {
+    customPatterns = customPatterns.filter(p => p.id !== id)
+  }
+
   // ── Canvas 2D ──────────────────────────────────────────────────────────────
   let canvas2d: HTMLCanvasElement | null = null
   let ctx2d: CanvasRenderingContext2D | null = null
   let rafId: number
   let dirty = true
+  let warmup = 3  // render unconditionally for first N frames (Firefox $effect timing)
 
   function markDirty() { dirty = true }
 
@@ -512,38 +530,42 @@
     vpH = window.innerHeight - 44 - 36
   }
 
+  let _prevRenderScale = 0
+
   function loop(time: number) {
     // Re-acquire context if it was lost (Firefox can drop it under memory pressure)
-    if (dirty && canvas2d && !ctx2d) ctx2d = canvas2d.getContext('2d')
-    if (dirty && ctx2d && canvas2d) {
+    if (canvas2d && !ctx2d) ctx2d = canvas2d.getContext('2d')
+    if (!ctx2d || !canvas2d) { rafId = requestAnimationFrame(loop); return }
+
+    const dpr         = window.devicePixelRatio || 1
+    const maxDim      = Math.max(artW, artH)
+    const dimCap      = maxDim > 0 ? 16384 / maxDim : MAX_RENDER_SCALE
+    const renderScale = Math.min(zoom * dpr, MAX_RENDER_SCALE, dimCap)
+    const w = Math.round(artW * renderScale)
+    const h = Math.round(artH * renderScale)
+
+    // Canvas resize clears bitmap — always redraw after resize
+    if (canvas2d.width !== w || canvas2d.height !== h) {
+      canvas2d.width  = w
+      canvas2d.height = h
+      // Firefox: re-acquire context after dimension change
+      ctx2d = canvas2d.getContext('2d')!
+      dirty = true
+    }
+
+    if (warmup > 0) { dirty = true; warmup-- }
+    if (dirty) {
       dirty = false
-      // Scale canvas buffer to match physical pixels at current zoom,
-      // so shapes stay crisp regardless of zoom level.
-      // renderScale is capped to MAX_RENDER_SCALE to prevent the canvas bitmap
-      // from growing unboundedly at high zoom levels (which would crash the tab).
-      // Visual zoom (CSS transform on the artboard) is unaffected by this cap.
-      const dpr         = window.devicePixelRatio || 1
-      // Cap so the canvas bitmap never exceeds browser limits (~16384px per side)
-      const maxDim      = Math.max(artW, artH)
-      const dimCap      = maxDim > 0 ? 16384 / maxDim : MAX_RENDER_SCALE
-      const renderScale = Math.min(zoom * dpr, MAX_RENDER_SCALE, dimCap)
-      const w = Math.round(artW * renderScale)
-      const h = Math.round(artH * renderScale)
-      if (canvas2d.width !== w || canvas2d.height !== h) {
-        canvas2d.width  = w
-        canvas2d.height = h
-      }
+      _prevRenderScale = renderScale
       ctx2d.setTransform(renderScale, 0, 0, renderScale, 0, 0)
-      // Paint artboard white on the canvas so we don't rely on a CSS
-      // background (which causes subpixel seams at fractional zoom).
       ctx2d.fillStyle = '#ffffff'
       ctx2d.fillRect(0, 0, artW, artH)
       try {
         renderLayers2D(ctx2d, resolvedLayers, artW, artH)
       } catch { /* don't let a bad frame kill the render loop */ }
       if (cmykProof) {
-        const w = canvas2d.width, h = canvas2d.height
-        const img = ctx2d.getImageData(0, 0, w, h)
+        const cw = canvas2d.width, ch = canvas2d.height
+        const img = ctx2d.getImageData(0, 0, cw, ch)
         applyCmykSoftProof(img)
         ctx2d.putImageData(img, 0, 0)
       }
@@ -637,7 +659,7 @@
 
   // ── Save / Load ────────────────────────────────────────────────────────────
   function handleSave() {
-    const content = serializeProject({ layers, artW, artH, customPalettes })
+    const content = serializeProject({ layers, artW, artH, customPalettes, customPatterns })
     const blob = new Blob([content], { type: 'text/plain' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
@@ -650,9 +672,10 @@
   async function handleLoad(file: File) {
     const content = await file.text()
     try {
-      const { layers: newLayers, artW: newW, artH: newH, customPalettes: newPalettes } = parseProject(content)
+      const { layers: newLayers, artW: newW, artH: newH, customPalettes: newPalettes, customPatterns: newPatterns } = parseProject(content)
       layers          = newLayers
       customPalettes  = newPalettes ?? []
+      customPatterns  = newPatterns ?? []
       activeLayerId    = newLayers[newLayers.length - 1]?.id ?? null
       activeShapeId    = null
       selectedShapeIds = []
@@ -870,7 +893,7 @@
   {activeShapeId}
   {selectedShapeIds}
   {activeTab}
-  onTabChange={(t: 'layers' | 'effects' | 'palettes' | 'samples') => activeTab = t}
+  onTabChange={(t: 'layers' | 'palettes' | 'patterns' | 'samples') => activeTab = t}
   onAddLayer={handleAddLayer}
   onSelectLayer={handleSelectLayer}
   onDeleteLayer={handleDeleteLayer}
@@ -890,6 +913,10 @@
   onAddPalette={handleAddPalette}
   onUpdatePalette={handleUpdatePalette}
   onDeletePalette={handleDeletePalette}
+  patterns={allPatterns}
+  onAddPattern={handleAddPattern}
+  onUpdatePattern={handleUpdatePattern}
+  onDeletePattern={handleDeletePattern}
   {panelWidth}
   onSetPanelW={(w) => { panelWidth = w; updateVP() }}
   {codePanelPos}
@@ -904,6 +931,7 @@
       {artW}
       {artH}
       palettes={allPalettes}
+      stamps={allPatterns.filter(p => p.code)}
       onSetQuery={handleSetQuery}
       height={codePanelH}
       onHeightChange={(h) => { codePanelH = h }}

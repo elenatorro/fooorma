@@ -494,8 +494,6 @@
   >
     <canvas
       bind:this={canvas2dEl}
-      width={artW}
-      height={artH}
       style:position="absolute"
       style:width="{artW}px"
       style:height="{artH}px"

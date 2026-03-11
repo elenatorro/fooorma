@@ -1,4 +1,4 @@
-import type { ColorStop, Gradient, LinearGradient, RadialGradient, Shape, ShapeEffect, ShapeStroke, ShapeTransform, ShapeType } from '../layers/types'
+import type { ColorStop, Gradient, LinearGradient, Pattern, RadialGradient, Shape, ShapeEffect, ShapeStroke, ShapeTransform, ShapeType } from '../layers/types'
 
 /** Serialize manual shapes to equivalent query code. */
 export function shapesToCode(shapes: Shape[]): string {
@@ -150,6 +150,7 @@ export function evaluateQuery(
   artW = 794,
   artH = 1123,
   palettes: { name: string; colors: string[] }[] = [],
+  stamps: Pattern[] = [],
 ): QueryResult {
   const shapes: Shape[] = []
   const errors: string[] = []
@@ -503,6 +504,219 @@ export function evaluateQuery(
     }
   }
 
+  // ── Tile helper ─────────────────────────────────────────────────────────
+  // tile(cols, rows, cb(col, row, colNorm, rowNorm))
+  // Shapes inside the callback are drawn in tile-local 0–1 space.
+  // They are automatically repositioned into each grid cell.
+  // Inside the callback, use mirror('x'), mirror('y'), or mirror('xy') to
+  // flip subsequently drawn shapes within the tile.
+  interface TileOpts { offsetX?: number; offsetY?: number; gapX?: number; gapY?: number }
+
+  let _tileCtx: { ox: number; oy: number; tw: number; th: number; mx: boolean; my: boolean } | null = null
+
+  const mirror = (axis: 'x' | 'y' | 'xy' = 'x'): void => {
+    if (!_tileCtx) return
+    if (axis === 'x' || axis === 'xy') _tileCtx.mx = !_tileCtx.mx
+    if (axis === 'y' || axis === 'xy') _tileCtx.my = !_tileCtx.my
+  }
+
+  /** Remap a shape's coordinates from tile-local 0–1 space to the grid cell.
+   *  h-sizes need aspect correction: geom.h is in artW-fractions, but cell height
+   *  is in artH-fractions. Multiply by artH/artW so local h=0.5 fills 50% of
+   *  cell height (not 50% of cell width). */
+  const _aspect = artH / artW
+
+  function remapShape(s: Shape, ox: number, oy: number, tw: number, th: number, mx: boolean, my: boolean): Shape {
+    const out = { ...s }
+    // Remap geom-based coords
+    let lx = s.geom.x, ly = s.geom.y, lw = s.geom.w, lh = s.geom.h
+    if (mx) lx = 1 - lx
+    if (my) ly = 1 - ly
+    out.geom = { x: ox + lx * tw, y: oy + ly * th, w: lw * tw, h: lh * th * _aspect }
+
+    // Remap pts (line, curve, triangle, spline, arc)
+    if (s.pts) {
+      const pts = [...s.pts]
+      if (s.type === 'arc') {
+        // arc pts are [startAngle, endAngle] — mirror reverses them
+        if (mx) { pts[0] = 360 - pts[1]; pts[1] = 360 - s.pts[0] }
+        if (my) { pts[0] = -pts[1]; pts[1] = -s.pts[0] }
+      } else {
+        // pts are flat [x0, y0, x1, y1, ...]
+        for (let i = 0; i < pts.length; i += 2) {
+          let px = pts[i], py = pts[i + 1]
+          if (mx) px = 1 - px
+          if (my) py = 1 - py
+          pts[i]     = ox + px * tw
+          pts[i + 1] = oy + py * th
+        }
+      }
+      out.pts = pts
+    }
+
+    // Mirror rotation in transform
+    if (s.transform && (mx || my)) {
+      const t = { ...s.transform }
+      if (t.rotate !== undefined && (mx !== my)) t.rotate = -t.rotate
+      if (t.skewX !== undefined && mx) t.skewX = -t.skewX
+      if (t.skewY !== undefined && my) t.skewY = -t.skewY
+      out.transform = t
+    }
+
+    // Recurse into group children
+    if (s.children) {
+      out.children = s.children.map(c => remapShape(c, ox, oy, tw, th, mx, my))
+    }
+
+    return out
+  }
+
+  const tile = (
+    cols: number,
+    rows: number,
+    cb: (col: number, row: number, ct: number, rt: number) => void,
+    opts?: TileOpts,
+  ): void => {
+    const nc = Math.min(Math.floor(cols), 200)
+    const nr = Math.min(Math.floor(rows), 200)
+    const gx = opts?.gapX ?? 0
+    const gy = opts?.gapY ?? 0
+    const baseOx = opts?.offsetX ?? 0
+    const baseOy = opts?.offsetY ?? 0
+    const tw = nc > 0 ? (1 - baseOx * 2 - gx * (nc - 1)) / nc : 1
+    const th = nr > 0 ? (1 - baseOy * 2 - gy * (nr - 1)) / nr : 1
+
+    for (let r = 0; r < nr; r++) {
+      for (let c = 0; c < nc; c++) {
+        if (shapes.length >= MAX_SHAPES) break
+        const cellOx = baseOx + c * (tw + gx)
+        const cellOy = baseOy + r * (th + gy)
+        const ct = nc > 1 ? c / (nc - 1) : 0
+        const rt = nr > 1 ? r / (nr - 1) : 0
+
+        // Capture shapes drawn inside the callback
+        _tileCtx = { ox: cellOx, oy: cellOy, tw, th, mx: false, my: false }
+        const startIdx = shapes.length
+        cb(c, r, ct, rt)
+        const localShapes = shapes.splice(startIdx)
+        const { ox, oy, mx, my } = _tileCtx
+        _tileCtx = null
+
+        // Remap and push
+        for (const s of localShapes) {
+          if (shapes.length >= MAX_SHAPES) break
+          shapes.push(remapShape(s, ox, oy, tw, th, mx, my))
+        }
+      }
+    }
+  }
+
+  // ── Dimension helpers ────────────────────────────────────────────────────
+  // Sizes in the data model are always in artW-fractions (uniform space).
+  // w()/width()  — identity (already in width-relative space)
+  // h()/height() — convert from height-relative to uniform space
+  const w      = (v: number): number => v
+  const width  = w
+  const h      = (v: number): number => v * artH / artW
+  const height = h
+
+  // ── Stamp (reusable shape group) ────────────────────────────────────────
+  // stamp('name')              — place shapes centered at (0.5, 0.5)
+  // stamp('name', { scale, rotate, mirror })  — with transforms
+  interface StampOpts { scale?: number; rotate?: number; mirror?: 'x' | 'y' | 'xy' }
+
+  /** Compute bounding-box center of shapes (x in artW-space, y in artH-space). */
+  function stampCenter(list: Shape[]): [number, number] {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    for (const s of list) {
+      if (s.pts && s.type !== 'arc') {
+        for (let i = 0; i < s.pts.length; i += 2) {
+          const px = s.pts[i], py = s.pts[i + 1]
+          if (px < minX) minX = px; if (px > maxX) maxX = px
+          if (py < minY) minY = py; if (py > maxY) maxY = py
+        }
+      } else {
+        const { x, y, w, h } = s.geom
+        // w,h are artW-fractions; convert h to artH-fraction for y-axis bbox
+        const hh = (h * artW) / artH / 2
+        const hw = w / 2
+        if (x - hw < minX) minX = x - hw; if (x + hw > maxX) maxX = x + hw
+        if (y - hh < minY) minY = y - hh; if (y + hh > maxY) maxY = y + hh
+      }
+    }
+    return [(minX + maxX) / 2, (minY + maxY) / 2]
+  }
+
+  const stamp = (name: string, opts?: StampOpts): void => {
+    const pat = stamps.find(p => p.code && p.name === name)
+    if (!pat || !pat.code) { errors.push(`stamp '${name}' not found`); return }
+    // Evaluate the stamp code into a temporary shape list
+    const inner = evaluateQuery(pat.code, artW, artH, palettes, stamps)
+    if (inner.errors.length) { errors.push(...inner.errors.map(e => `stamp '${name}': ${e}`)); return }
+    if (inner.shapes.length === 0) return
+
+    // Auto-center: shift all shapes so their bbox center sits at (0.5, 0.5)
+    const [cx, cy] = stampCenter(inner.shapes)
+    const dx = 0.5 - cx, dy = 0.5 - cy
+
+    const sc = opts?.scale ?? 1
+    const rot = opts?.rotate ?? 0
+    const mx = opts?.mirror === 'x' || opts?.mirror === 'xy'
+    const my = opts?.mirror === 'y' || opts?.mirror === 'xy'
+    const cosR = Math.cos(rot * Math.PI / 180)
+    const sinR = Math.sin(rot * Math.PI / 180)
+
+    for (const s of inner.shapes) {
+      if (shapes.length >= MAX_SHAPES) break
+      let out = { ...s, id: crypto.randomUUID() }
+      // Shift to center, then apply scale/mirror/rotate around (0.5, 0.5)
+      let lx = s.geom.x + dx, ly = s.geom.y + dy, lw = s.geom.w, lh = s.geom.h
+      if (sc !== 1) {
+        lx = 0.5 + (lx - 0.5) * sc
+        ly = 0.5 + (ly - 0.5) * sc
+        lw *= sc; lh *= sc
+      }
+      if (mx) lx = 1 - lx
+      if (my) ly = 1 - ly
+      if (rot !== 0) {
+        const ddx = lx - 0.5, ddy = ly - 0.5
+        lx = 0.5 + ddx * cosR - ddy * sinR
+        ly = 0.5 + ddx * sinR + ddy * cosR
+      }
+      out.geom = { x: lx, y: ly, w: lw, h: lh }
+      // Transform pts
+      if (s.pts && s.type !== 'arc') {
+        const pts = [...s.pts]
+        for (let i = 0; i < pts.length; i += 2) {
+          let px = pts[i] + dx, py = pts[i + 1] + dy
+          if (sc !== 1) { px = 0.5 + (px - 0.5) * sc; py = 0.5 + (py - 0.5) * sc }
+          if (mx) px = 1 - px
+          if (my) py = 1 - py
+          if (rot !== 0) {
+            const ddx = px - 0.5, ddy = py - 0.5
+            px = 0.5 + ddx * cosR - ddy * sinR
+            py = 0.5 + ddx * sinR + ddy * cosR
+          }
+          pts[i] = px; pts[i + 1] = py
+        }
+        out.pts = pts
+      }
+      // Merge rotation into existing transform
+      if (rot !== 0 || (mx !== my)) {
+        const t = { ...(s.transform ?? {}) }
+        const existingRot = t.rotate ?? 0
+        let addedRot = rot
+        if (mx !== my) addedRot = -addedRot
+        t.rotate = existingRot + addedRot
+        out.transform = t
+      }
+      if (s.children) {
+        out.children = s.children.map(c => ({ ...c, id: crypto.randomUUID() }))
+      }
+      shapes.push(out)
+    }
+  }
+
   // ── Math helpers ──────────────────────────────────────────────────────────
   const lerp       = (a: number, b: number, t: number) => a + (b - a) * t
   const clamp      = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
@@ -528,9 +742,11 @@ export function evaluateQuery(
       'beginGroup', 'endGroup',
       'stroke', 'rotate', 'transform',
       'shadow', 'blur', 'bevel', 'noise', 'warp', 'material',
-      'repeat', 'grid', 'wave', 'circular',
+      'repeat', 'grid', 'wave', 'circular', 'tile', 'mirror',
+      'stamp',
       'grad', 'radGrad',
       'palette',
+      'w', 'width', 'h', 'height',
       'W', 'H',
       'PI', 'TAU', 'E',
       'sin', 'cos', 'tan', 'abs', 'floor', 'ceil', 'round', 'sqrt', 'pow', 'min', 'max', 'random',
@@ -542,9 +758,11 @@ export function evaluateQuery(
       beginGroup, endGroup,
       mkStroke, rotate, transform,
       shadow, blur, bevel, noise, warp, material,
-      repeat, grid, wave, circular,
+      repeat, grid, wave, circular, tile, mirror,
+      stamp,
       grad, radGrad,
       palette,
+      w, width, h, height,
       artW, artH,
       Math.PI, Math.PI * 2, Math.E,
       Math.sin, Math.cos, Math.tan, Math.abs, Math.floor, Math.ceil,

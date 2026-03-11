@@ -1,4 +1,4 @@
-import type { Layer } from '../layers/types'
+import type { Layer, Pattern } from '../layers/types'
 import type { Palette } from '../palettes/index'
 import { shapesToCode, evaluateQuery } from '../query/index'
 
@@ -7,17 +7,34 @@ export interface ProjectData {
   artW: number
   artH: number
   customPalettes?: Palette[]
+  customPatterns?: Pattern[]
 }
 
 // ── Serialize ──────────────────────────────────────────────────────────────
 
-export function serializeProject({ layers, artW, artH, customPalettes = [] }: ProjectData): string {
+export function serializeProject({ layers, artW, artH, customPalettes = [], customPatterns = [] }: ProjectData): string {
   const out: string[] = ['// forma v1', `// Artboard: ${artW} × ${artH}`, '']
 
   for (const p of customPalettes) {
     out.push(`// @palette "${p.name}" ${p.colors.join(' ')}`)
   }
   if (customPalettes.length > 0) out.push('')
+
+  // Serialize stamps (code-based patterns) as plain code blocks
+  const stamps = customPatterns.filter(p => p.code)
+  for (const s of stamps) {
+    out.push(`// @stamp "${s.name}"`)
+    out.push(s.code!)
+    out.push('// @endstamp')
+  }
+  if (stamps.length > 0) out.push('')
+
+  // Serialize template patterns (non-code)
+  const templates = customPatterns.filter(p => !p.code && !p.builtin)
+  for (const p of templates) {
+    out.push(`// @pattern "${p.name}" ${p.type} ${p.shape} ${p.color} ${p.opacity} ${p.count} ${p.cols} ${p.rows}`)
+  }
+  if (templates.length > 0) out.push('')
 
   for (const layer of layers) {
     let header = `// @layer "${layer.name}"`
@@ -53,9 +70,29 @@ export function parseProject(content: string): ProjectData {
 
   const rawLayers: RawLayer[] = []
   const customPalettes: Palette[] = []
+  const customPatterns: Pattern[] = []
   let cur: RawLayer | null = null
+  let stampName: string | null = null
+  let stampLines: string[] = []
 
   for (const line of lines) {
+    // Collecting stamp code block
+    if (stampName !== null) {
+      if (line === '// @endstamp') {
+        customPatterns.push({
+          id: crypto.randomUUID(), name: stampName,
+          type: 'single', shape: 'rect', color: '#8b5cf6', opacity: 1,
+          count: 1, cols: 1, rows: 1,
+          code: stampLines.join('\n'),
+        })
+        stampName = null
+        stampLines = []
+      } else {
+        stampLines.push(line)
+      }
+      continue
+    }
+
     if (line.startsWith('// forma v')) continue
 
     // Artboard dimensions — handle both × (U+00D7) and x
@@ -73,6 +110,31 @@ export function parseProject(content: string): ProjectData {
       if (colors.length > 0) {
         customPalettes.push({ id: crypto.randomUUID(), name: paletteMatch[1], colors })
       }
+      continue
+    }
+
+    // Stamp block start
+    const stampMatch = line.match(/^\/\/ @stamp "([^"]*)"$/)
+    if (stampMatch) {
+      stampName = stampMatch[1]
+      stampLines = []
+      continue
+    }
+
+    // Template pattern
+    const patternMatch = line.match(/^\/\/ @pattern "([^"]*)" (\S+) (\S+) (#[0-9a-fA-F]{6}) ([\d.]+) (\d+) (\d+) (\d+)$/)
+    if (patternMatch) {
+      customPatterns.push({
+        id: crypto.randomUUID(),
+        name: patternMatch[1],
+        type: patternMatch[2] as Pattern['type'],
+        shape: patternMatch[3] as Pattern['shape'],
+        color: patternMatch[4],
+        opacity: parseFloat(patternMatch[5]),
+        count: parseInt(patternMatch[6]),
+        cols: parseInt(patternMatch[7]),
+        rows: parseInt(patternMatch[8]),
+      })
       continue
     }
 
@@ -95,6 +157,7 @@ export function parseProject(content: string): ProjectData {
   }
 
   const allPalettes = customPalettes
+  const stampPatterns = customPatterns.filter(p => p.code)
   const layers: Layer[] = rawLayers.map(r => {
     const query = r.queryLines.join('\n').trim()
     const base = {
@@ -105,7 +168,7 @@ export function parseProject(content: string): ProjectData {
       query,
     }
     if (r.mode === 'manual') {
-      const { shapes } = evaluateQuery(query, artW, artH, allPalettes)
+      const { shapes } = evaluateQuery(query, artW, artH, allPalettes, stampPatterns)
       return { ...base, mode: 'manual' as const, shapes }
     }
     return { ...base, mode: 'code' as const, shapes: [] }
@@ -116,5 +179,5 @@ export function parseProject(content: string): ProjectData {
     layers.push({ id: crypto.randomUUID(), name: 'Layer 1', visible: true, mode: 'code', shapes: [], query: '' })
   }
 
-  return { layers, artW, artH, customPalettes }
+  return { layers, artW, artH, customPalettes, customPatterns }
 }

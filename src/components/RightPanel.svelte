@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { Layer, Material3D, Shape, ShapeEffect, ShapeGeom } from '../lib/layers/types'
+  import type { Layer, Material3D, Pattern, PatternType, Shape, ShapeEffect, ShapeGeom } from '../lib/layers/types'
   import type { Palette } from '../lib/palettes/index'
-  import { evaluateQuery } from '../lib/query/index'
+  import { evaluateQuery, shapesToCode } from '../lib/query/index'
   import { API_SNIPPETS } from '../lib/api-snippets'
   import { adjustEditorFontSize } from '../lib/editor-font'
   import ColorPicker from './ColorPicker.svelte'
@@ -37,6 +37,10 @@
     onAddPalette,
     onUpdatePalette,
     onDeletePalette,
+    patterns,
+    onAddPattern,
+    onUpdatePattern,
+    onDeletePattern,
     panelWidth,
     onSetPanelW,
     codePanelPos,
@@ -48,8 +52,8 @@
     activeLayerId: string | null
     activeShapeId: string | null
     selectedShapeIds: string[]
-    activeTab: 'layers' | 'palettes' | 'samples'
-    onTabChange: (t: 'layers' | 'effects' | 'palettes' | 'samples') => void
+    activeTab: 'layers' | 'palettes' | 'patterns' | 'samples'
+    onTabChange: (t: 'layers' | 'palettes' | 'patterns' | 'samples') => void
     onAddLayer: () => void
     onSelectLayer: (id: string) => void
     onDeleteLayer: (id: string) => void
@@ -69,6 +73,10 @@
     onAddPalette: () => void
     onUpdatePalette: (id: string, update: Partial<Palette>) => void
     onDeletePalette: (id: string) => void
+    patterns: Pattern[]
+    onAddPattern: (pattern: Pattern) => void
+    onUpdatePattern: (id: string, update: Partial<Pattern>) => void
+    onDeletePattern: (id: string) => void
     panelWidth: number
     onSetPanelW: (w: number) => void
     codePanelPos: 'right' | 'bottom'
@@ -78,7 +86,8 @@
   const activeLayer  = $derived(layers.find(l => l.id === activeLayerId) ?? null)
   const activeShape  = $derived(activeLayer?.shapes.find(s => s.id === activeShapeId) ?? null)
   const isCodeMode   = $derived(activeLayer?.mode === 'code')
-  const codeResult   = $derived(isCodeMode && activeLayer ? evaluateQuery(activeLayer.query, artW, artH, palettes) : null)
+  const stampPatterns = $derived(patterns.filter(p => p.code))
+  const codeResult   = $derived(isCodeMode && activeLayer ? evaluateQuery(activeLayer.query, artW, artH, palettes, stampPatterns) : null)
   const selectedShapes = $derived(
     !isCodeMode && activeLayer ? activeLayer.shapes.filter(s => selectedShapeIds.includes(s.id)) : []
   )
@@ -204,12 +213,11 @@ repeat(14, (i, a) => {
     {
       name: 'Dot Grid',
       desc: 'Noise-sized grid of circles from a palette',
-      code: `// grid(cols, rows, (c, r, ct, rt) => ...) — c/r: index, ct/rt: normalized 0→1
-grid(14, 18, (c, r, ct, rt) => {
+      code: `// tile(cols, rows, (c, r, ct, rt) => ...) — shapes in tile-local 0–1 space
+tile(14, 18, (c, r, ct, rt) => {
   const n = nz(ct * 4, rt * 4)
-  const s = lerp(0.008, 0.026, n)
-  ellipse((c + 0.5) / 14, (r + 0.5) / 18, s, s,
-    palette('Neon', c + r), lerp(0.35, 1, n))
+  const s = lerp(0.1, 0.4, n)
+  ellipse(0.5, 0.5, s, s, palette('Neon', c + r), lerp(0.35, 1, n))
 })`,
     },
     {
@@ -260,14 +268,13 @@ circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
     {
       name: 'Noise Tiles',
       desc: 'Rotated rectangles sized by noise',
-      code: `grid(8, 10, (c, r, ct, rt) => {
+      code: `tile(8, 10, (c, r, ct, rt) => {
   const n = nz(ct * 3, rt * 3)
-  const s = lerp(0.055, 0.11, n)
-  rect((c + 0.5) / 8, (r + 0.5) / 10,
-    s, s * (W / H),
+  const s = lerp(0.4, 0.9, n)
+  rect(0.5, 0.5, s, s,
     palette('Ember', floor(n * 6)), lerp(0.5, 1, n),
     rotate(n * 90))
-})`,
+}, { gapX: 0.003, gapY: 0.003 })`,
     },
     {
       name: 'Wave Dots',
@@ -281,10 +288,10 @@ wave(40, 0.28, 1.5, (i, t, x, y) => {
     {
       name: 'Metal Cubes',
       desc: 'Metallic cubes in a grid with sharp highlights',
-      code: `grid(5, 6, (c, r, ct, rt) => {
+      code: `tile(5, 6, (c, r, ct, rt) => {
   const n = nz(ct * 3, rt * 3)
-  cube((c + 0.5) / 5, (r + 0.5) / 6, lerp(0.06, 0.12, n),
-    palette('Neon', c + r), lerp(0.6, 1, n),
+  const s = lerp(0.4, 0.85, n)
+  cube(0.5, 0.5, s, palette('Neon', c + r), lerp(0.6, 1, n),
     transform({ rotateX: 30 + n * 25, rotateY: 40 + n * 30 }), material('metal'))
 })`,
     },
@@ -330,6 +337,28 @@ repeat(30, (i, t) => {
     palette('Ember', i % 6), lerp(0.5, 0.95, t),
     transform({ rotateX: 30 + i * 7, rotateY: 45 + i * 11 }), material(mats[i % 4]))
 })`,
+    },
+    {
+      name: 'Tile Mosaic',
+      desc: 'Repeating tile with mirrored alternation',
+      code: `// tile(cols, rows, cb) — shapes drawn in tile-local 0–1 space
+tile(5, 7, (c, r, ct, rt) => {
+  rect(0.5, 0.5, 0.9, 0.9, palette('Aurora', c + r * 2), 0.7)
+  ellipse(0.25, 0.25, 0.3, 0.3, '#fff', 0.4)
+  ellipse(0.75, 0.75, 0.2, 0.2, '#000', 0.3)
+  if ((c + r) % 2) mirror('x')
+})`,
+    },
+    {
+      name: 'Tile Weave',
+      desc: 'Interlocking tile pattern with per-cell variation',
+      code: `tile(6, 8, (c, r, ct, rt) => {
+  const n = nz(ct * 3, rt * 3)
+  rect(0.5, 0.5, 0.85, 0.85, palette('Ocean', c + r), lerp(0.4, 0.9, n))
+  line(0, 0.5, 1, 0.5, '#fff', 0.2 + n * 0.3, 0.01)
+  line(0.5, 0, 0.5, 1, '#fff', 0.2 + n * 0.3, 0.01)
+  if (r % 2) mirror('y')
+}, { gapX: 0.005, gapY: 0.005 })`,
     },
   ]
 
@@ -452,6 +481,118 @@ repeat(30, (i, t) => {
     return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  const d = 0.03\n  triangle(x, y - d, x - d, y + d, x + d, y + d, ${color}, ${op})\n})`
   }
 
+  // ── Pattern helpers ────────────────────────────────────────────────────────
+  function buildPatternCode(p: Pattern): string {
+    // Temporarily set template state from pattern, call buildTemplate, restore
+    const prevTpl = tpl, prevCount = tplCount, prevCols = tplCols, prevRows = tplRows
+    const prevShape = tplShape, prevColor = tplColor, prevOpacity = tplOpacity
+    tpl = p.type; tplCount = p.count; tplCols = p.cols; tplRows = p.rows
+    tplShape = p.shape as typeof tplShape; tplColor = p.color; tplOpacity = p.opacity
+    const code = buildTemplate()
+    tpl = prevTpl; tplCount = prevCount; tplCols = prevCols; tplRows = prevRows
+    tplShape = prevShape; tplColor = prevColor; tplOpacity = prevOpacity
+    return code
+  }
+
+  function loadPattern(p: Pattern) {
+    if (!activeLayer) return
+    const code = p.code ? `stamp('${p.name}')` : buildPatternCode(p)
+    onSetMode(activeLayer.id, 'code')
+    const existing = activeLayer.query.trimEnd()
+    onSetQuery(activeLayer.id, existing ? existing + '\n' + code : code)
+    onTabChange('layers')
+  }
+
+  function saveCurrentAsPattern() {
+    onAddPattern({
+      id: '',
+      name: `Pattern ${patterns.filter(p => !p.builtin).length + 1}`,
+      type: tpl,
+      shape: tplShape,
+      color: tplColor,
+      opacity: tplOpacity,
+      count: tplCount,
+      cols: tplCols,
+      rows: tplRows,
+    })
+  }
+
+  /** Shift shapes so their bounding-box center sits at (0.5, 0.5). */
+  function normalizeToCenter(shapes: Shape[]): Shape[] {
+    if (shapes.length === 0) return shapes
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    for (const s of shapes) {
+      if (s.pts && s.type !== 'arc') {
+        for (let i = 0; i < s.pts.length; i += 2) {
+          minX = Math.min(minX, s.pts[i]); maxX = Math.max(maxX, s.pts[i])
+          minY = Math.min(minY, s.pts[i + 1]); maxY = Math.max(maxY, s.pts[i + 1])
+        }
+      } else {
+        const hw = s.geom.w / 2, hh = s.geom.h / 2
+        minX = Math.min(minX, s.geom.x - hw); maxX = Math.max(maxX, s.geom.x + hw)
+        minY = Math.min(minY, s.geom.y - hh); maxY = Math.max(maxY, s.geom.y + hh)
+      }
+    }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
+    const dx = 0.5 - cx, dy = 0.5 - cy
+    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return shapes
+    return shapes.map(s => {
+      const out = { ...s, geom: { ...s.geom, x: s.geom.x + dx, y: s.geom.y + dy } }
+      if (s.pts && s.type !== 'arc') {
+        out.pts = s.pts.map((v, i) => i % 2 === 0 ? v + dx : v + dy)
+      }
+      return out
+    })
+  }
+
+  function saveSelectedAsStamp() {
+    if (!activeLayer || selectedShapes.length === 0) return
+    const code = shapesToCode(normalizeToCenter(selectedShapes))
+    onAddPattern({
+      id: '',
+      name: `Stamp ${patterns.filter(p => !p.builtin).length + 1}`,
+      type: 'single',
+      shape: 'rect',
+      color: '#8b5cf6',
+      opacity: 1,
+      count: 1,
+      cols: 1,
+      rows: 1,
+      code,
+    })
+  }
+
+  function saveCodeAsStamp() {
+    if (!activeLayer || !isCodeMode || !activeLayer.query.trim()) return
+    onAddPattern({
+      id: '',
+      name: `Stamp ${patterns.filter(p => !p.builtin).length + 1}`,
+      type: 'single',
+      shape: 'rect',
+      color: '#8b5cf6',
+      opacity: 1,
+      count: 1,
+      cols: 1,
+      rows: 1,
+      code: activeLayer.query.trim(),
+    })
+  }
+
+  let editingPatternId = $state<string | null>(null)
+  let editingPatternName = $state('')
+  let editingStampCode = $state<string | null>(null)
+  let editingStampCodeValue = $state('')
+
+  const PATTERN_TYPE_LABELS: Record<PatternType, string> = {
+    single: 'Single', row: 'Row', grid: 'Grid',
+    spiral: 'Spiral', wave: 'Wave', circular: 'Circular',
+  }
+
+  const SHAPE_ICONS: Record<string, string> = {
+    rect: '▭', ellipse: '◯', arc: '◜', line: '╱', curve: '∿',
+    triangle: '△', cube: '⬡', sphere: '●', cylinder: '⬮', torus: '◎',
+  }
+
   // ── Shape effect helpers ───────────────────────────────────────────────────
   function toggleFx(type: ShapeEffect['type'], defaults: Partial<ShapeEffect>) {
     if (!activeLayer || !activeShape) return
@@ -523,6 +664,11 @@ repeat(30, (i, t) => {
     >Palettes</button>
     <button
       class="tab-btn"
+      class:active={activeTab === 'patterns'}
+      onclick={() => onTabChange('patterns')}
+    >Patterns</button>
+    <button
+      class="tab-btn"
       class:active={activeTab === 'samples'}
       onclick={() => onTabChange('samples')}
     >Samples</button>
@@ -560,7 +706,7 @@ repeat(30, (i, t) => {
 
             <!-- Shape count badge -->
             <span class="shape-badge">{layer.mode === 'code' && layer.query.trim()
-              ? evaluateQuery(layer.query, artW, artH, palettes).shapes.length
+              ? evaluateQuery(layer.query, artW, artH, palettes, stampPatterns).shapes.length
               : layer.shapes.length}</span>
 
             <!-- Name (or rename input) -->
@@ -1034,6 +1180,7 @@ repeat(30, (i, t) => {
       <!-- Per-shape shaders -->
       <section class="section">
         <h2 class="section-title">Shaders</h2>
+        {#if activeShape}
         {@const shadowFx = activeShape.effects?.find(e => e.type === 'shadow')}
         {@const blurFx   = activeShape.effects?.find(e => e.type === 'blur')}
         {@const bevelFx  = activeShape.effects?.find(e => e.type === 'bevel')}
@@ -1166,6 +1313,7 @@ repeat(30, (i, t) => {
             {/if}
           {/each}
         {/if}
+        {/if}
       </section>
     {/if}
   {/if}
@@ -1281,6 +1429,190 @@ repeat(30, (i, t) => {
         &#125;)</code>
       </p>
     </section>
+  {/if}
+
+  <!-- ── Patterns tab ── -->
+  {#if activeTab === 'patterns'}
+
+    <!-- Save as stamp -->
+    <section class="section">
+      <h2 class="section-title">Save Stamp</h2>
+      {#if !isCodeMode && selectedShapes.length > 0}
+        <button class="add-layer-btn" onclick={saveSelectedAsStamp}>+ Save {selectedShapes.length} selected shape{selectedShapes.length > 1 ? 's' : ''} as stamp</button>
+      {:else if isCodeMode && activeLayer?.query.trim()}
+        <button class="add-layer-btn" onclick={saveCodeAsStamp}>+ Save current code as stamp</button>
+      {:else}
+        <p class="fx-hint">Select shapes or write code to save as a reusable stamp.</p>
+      {/if}
+    </section>
+
+    <!-- Save current template as pattern -->
+    <section class="section">
+      <h2 class="section-title">Save Template Pattern</h2>
+      <p class="pattern-hint">{PATTERN_TYPE_LABELS[tpl]} &middot; {tplShape} &middot; {tpl === 'grid' ? `${tplCols}×${tplRows}` : `${tplCount}×`}</p>
+      <button class="add-layer-btn" onclick={saveCurrentAsPattern}>+ Save as pattern</button>
+    </section>
+
+    <!-- Stamps (code-based) -->
+    {@const stampList = patterns.filter(p => !p.builtin && p.code)}
+    {#if stampList.length > 0}
+      <section class="section">
+        <h2 class="section-title">Stamps</h2>
+        <div class="pattern-list">
+          {#each stampList as pattern}
+            <div class="pattern-card">
+              <div class="pattern-card-header">
+                {#if editingPatternId === pattern.id}
+                  <!-- svelte-ignore a11y_autofocus -->
+                  <input
+                    class="rename-input"
+                    bind:value={editingPatternName}
+                    autofocus
+                    onblur={() => {
+                      if (editingPatternName.trim()) onUpdatePattern(pattern.id, { name: editingPatternName.trim() })
+                      editingPatternId = null
+                    }}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLElement).blur()
+                      if (e.key === 'Escape') editingPatternId = null
+                    }}
+                  />
+                {:else}
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <span
+                    class="pattern-card-name"
+                    title="Double-click to rename"
+                    ondblclick={() => { editingPatternId = pattern.id; editingPatternName = pattern.name }}
+                  >{pattern.name}</span>
+                {/if}
+                <span class="pattern-card-meta stamp-badge">stamp</span>
+                <button
+                  class="icon-btn delete-btn"
+                  title="Delete stamp"
+                  onclick={() => onDeletePattern(pattern.id)}
+                >×</button>
+              </div>
+              <!-- Code preview / edit -->
+              {#if editingStampCode === pattern.id}
+                <textarea
+                  class="stamp-code-editor"
+                  bind:value={editingStampCodeValue}
+                  rows="4"
+                  spellcheck="false"
+                  onblur={() => {
+                    if (editingStampCodeValue.trim()) onUpdatePattern(pattern.id, { code: editingStampCodeValue.trim() })
+                    editingStampCode = null
+                  }}
+                  onkeydown={(e) => {
+                    if (e.key === 'Escape') editingStampCode = null
+                    if (e.key === 'Tab') { e.preventDefault(); editingStampCodeValue += '  ' }
+                  }}
+                ></textarea>
+              {:else}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <pre
+                  class="stamp-code-preview"
+                  title="Click to edit"
+                  onclick={() => { editingStampCode = pattern.id; editingStampCodeValue = pattern.code ?? '' }}
+                >{pattern.code}</pre>
+              {/if}
+              <div class="pattern-card-actions">
+                <button class="sample-load-btn" onclick={() => loadPattern(pattern)}>Insert</button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    <!-- Built-in patterns -->
+    <section class="section">
+      <h2 class="section-title">Built-in Patterns</h2>
+      <div class="pattern-list">
+        {#each patterns.filter(p => p.builtin) as pattern}
+          <div class="pattern-card">
+            <div class="pattern-card-header">
+              <span class="pattern-card-name">{pattern.name}</span>
+              <span class="pattern-card-meta">
+                <span class="pattern-swatch" style:background={pattern.color}></span>
+                {SHAPE_ICONS[pattern.shape] ?? '?'} {PATTERN_TYPE_LABELS[pattern.type]}
+                {pattern.type === 'grid' ? `${pattern.cols}×${pattern.rows}` : `×${pattern.count}`}
+              </span>
+            </div>
+            <div class="pattern-card-actions">
+              <button class="sample-load-btn" onclick={() => loadPattern(pattern)}>Insert</button>
+            </div>
+          </div>
+        {/each}
+      </div>
+    </section>
+
+    <!-- Custom template patterns (non-stamp) -->
+    {@const customTemplates = patterns.filter(p => !p.builtin && !p.code)}
+    {#if customTemplates.length > 0}
+      <section class="section">
+        <h2 class="section-title">Custom Patterns</h2>
+        <div class="pattern-list">
+          {#each customTemplates as pattern}
+            <div class="pattern-card">
+              <div class="pattern-card-header">
+                {#if editingPatternId === pattern.id}
+                  <!-- svelte-ignore a11y_autofocus -->
+                  <input
+                    class="rename-input"
+                    bind:value={editingPatternName}
+                    autofocus
+                    onblur={() => {
+                      if (editingPatternName.trim()) onUpdatePattern(pattern.id, { name: editingPatternName.trim() })
+                      editingPatternId = null
+                    }}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLElement).blur()
+                      if (e.key === 'Escape') editingPatternId = null
+                    }}
+                  />
+                {:else}
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <span
+                    class="pattern-card-name"
+                    title="Double-click to rename"
+                    ondblclick={() => { editingPatternId = pattern.id; editingPatternName = pattern.name }}
+                  >{pattern.name}</span>
+                {/if}
+                <span class="pattern-card-meta">
+                  <span class="pattern-swatch" style:background={pattern.color}></span>
+                  {SHAPE_ICONS[pattern.shape] ?? '?'} {PATTERN_TYPE_LABELS[pattern.type]}
+                  {pattern.type === 'grid' ? `${pattern.cols}×${pattern.rows}` : `×${pattern.count}`}
+                </span>
+                <button
+                  class="icon-btn delete-btn"
+                  title="Delete pattern"
+                  onclick={() => onDeletePattern(pattern.id)}
+                >×</button>
+              </div>
+              <div class="pattern-card-actions">
+                <button class="sample-load-btn" onclick={() => loadPattern(pattern)}>Insert</button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    <!-- Usage hint -->
+    <section class="section">
+      <p class="palette-hint">Use stamps in code mode:<br>
+        <code>stamp('MyStamp')<br>
+          // inside tile:<br>
+          tile(4, 4, (c, r) =&gt; &#123;<br>
+          &nbsp;&nbsp;stamp('MyStamp', &#123; scale: 0.8 &#125;)<br>
+          &#125;)</code>
+      </p>
+    </section>
+
   {/if}
 
   <!-- ── Samples tab ── -->
@@ -2152,5 +2484,111 @@ repeat(30, (i, t) => {
     background: var(--bg-sunken);
     border-radius: 4px;
     border: 1px solid var(--border-inner);
+  }
+
+  /* ── Pattern cards ── */
+  .pattern-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .pattern-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    transition: border-color .12s;
+  }
+  .pattern-card:hover { border-color: var(--accent); }
+
+  .pattern-card-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .pattern-card-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-2);
+    flex: 1;
+    min-width: 0;
+    cursor: text;
+  }
+  .pattern-card-name:hover { color: var(--text-1); }
+
+  .pattern-card-meta {
+    font-size: 10px;
+    color: var(--text-5);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .pattern-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .pattern-card-actions {
+    margin-top: 6px;
+    display: flex;
+    gap: 4px;
+  }
+
+  .pattern-hint {
+    font-size: 11px;
+    color: var(--text-5);
+    margin: 2px 0 6px;
+  }
+
+  .stamp-badge {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent-text);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  .stamp-code-preview {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 10px;
+    color: var(--text-4);
+    background: var(--bg-sunken);
+    border: 1px solid var(--border-inner);
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-top: 4px;
+    max-height: 80px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    cursor: pointer;
+    transition: border-color .12s;
+  }
+  .stamp-code-preview:hover { border-color: var(--accent); }
+
+  .stamp-code-editor {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 10px;
+    color: var(--text-2);
+    background: var(--bg-sunken);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-top: 4px;
+    width: 100%;
+    resize: vertical;
+    outline: none;
+    tab-size: 2;
   }
 </style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Layer } from '../lib/layers/types'
+  import type { Layer, Pattern } from '../lib/layers/types'
   import type { Palette } from '../lib/palettes/index'
   import { evaluateQuery } from '../lib/query/index'
   import { API_SNIPPETS } from '../lib/api-snippets'
@@ -12,6 +12,7 @@
     artW,
     artH,
     palettes,
+    stamps = [],
     onSetQuery,
     height,
     onHeightChange,
@@ -21,6 +22,7 @@
     artW: number
     artH: number
     palettes: Palette[]
+    stamps?: Pattern[]
     onSetQuery: (id: string, q: string) => void
     height: number
     onHeightChange: (h: number) => void
@@ -38,7 +40,7 @@
   let apiOpen   = $state(false)
   let cursorColor = $state<{ hex: string; from: number; to: number } | null>(null)
 
-  const codeResult = $derived(evaluateQuery(activeLayer.query, artW, artH, palettes))
+  const codeResult = $derived(evaluateQuery(activeLayer.query, artW, artH, palettes, stamps))
 
   function detectColorAtCursor() {
     cursorColor = editorRef?.getColorAtCursor() ?? null

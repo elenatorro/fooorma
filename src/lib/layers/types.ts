@@ -66,6 +66,22 @@ export interface Shape {
   children?: Shape[]         // only for type === 'group'
 }
 
+export type PatternType = 'single' | 'row' | 'grid' | 'spiral' | 'wave' | 'circular'
+
+export interface Pattern {
+  id: string
+  name: string
+  type: PatternType
+  shape: ShapeType
+  color: string
+  opacity: number
+  count: number         // for repeat-based patterns
+  cols: number          // for grid
+  rows: number          // for grid
+  builtin?: boolean
+  code?: string         // stamp: raw code snippet (shapes in 0–1 local space)
+}
+
 export interface Layer {
   id: string
   name: string
