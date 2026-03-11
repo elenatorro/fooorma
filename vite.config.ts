@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/*.png'],
       manifest: {
-        name: 'Forma',
-        short_name: 'Forma',
+        name: 'Fooorma',
+        short_name: 'Fooorma',
         description: 'Procedural art studio',
         theme_color: '#000000',
         background_color: '#000000',

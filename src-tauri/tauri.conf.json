@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Forma",
+  "productName": "Fooorma",
   "version": "0.1.0",
   "identifier": "dev.forma.app",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Forma",
+        "title": "Fooorma",
         "width": 1440,
         "height": 900,
         "minWidth": 800,

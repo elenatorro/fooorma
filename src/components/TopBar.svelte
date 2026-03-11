@@ -105,7 +105,7 @@
 </script>
 
 <header class="topbar">
-  <span class="logo">forma</span>
+  <span class="logo">fooorma</span>
 
   <!-- Canvas size editor -->
   <div class="size-editor">
