@@ -6,7 +6,7 @@ authors = []
 edition = "2021"
 
 [lib]
-name = "forma_lib"
+name = "fooorma_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

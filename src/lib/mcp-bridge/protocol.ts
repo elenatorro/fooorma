@@ -1,4 +1,4 @@
-/** WebSocket protocol between MCP server ↔ Forma PWA (mirrors mcp-server/src/protocol.ts) */
+/** WebSocket protocol between MCP server ↔ fooorma PWA (mirrors mcp-server/src/protocol.ts) */
 
 export interface BridgeRequest {
   id: string

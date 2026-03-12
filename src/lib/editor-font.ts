@@ -1,5 +1,5 @@
 const SIZES = [9, 10, 11, 12, 13, 14, 16, 18, 20]
-const KEY = 'forma_code_font'
+const KEY = 'fooorma_code_font'
 
 export function initEditorFont() {
   const saved = parseInt(localStorage.getItem(KEY) ?? '11') || 11

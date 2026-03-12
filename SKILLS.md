@@ -1,4 +1,4 @@
-# Forma — Development Skills & Knowledge
+# Fooorma — Development Skills & Knowledge
 
 ## 1. Architecture Overview
 
@@ -30,16 +30,16 @@ All state lives in `App.svelte` using Svelte 5 runes. Child components receive p
 | `customPalettes` | `Palette[]` | autosave |
 | `customPatterns` | `Pattern[]` | autosave |
 | `zoom`, `panX`, `panY` | `number` | session only |
-| `theme` | `'dark' \| 'light'` | localStorage `forma_theme` |
-| `panelWidth` | `number` | localStorage `forma_panel_w` |
-| `codePanelPos` | `'right' \| 'bottom'` | localStorage `forma_code_pos` |
-| `codePanelH` | `number` | localStorage `forma_code_h` |
+| `theme` | `'dark' \| 'light'` | localStorage `fooorma_theme` |
+| `panelWidth` | `number` | localStorage `fooorma_panel_w` |
+| `codePanelPos` | `'right' \| 'bottom'` | localStorage `fooorma_code_pos` |
+| `codePanelH` | `number` | localStorage `fooorma_code_h` |
 | `activeTab` | tab union | session only |
 | `exportScale` | `number` | session only |
 | `exportFormat` | `'png' \| 'cmyk-tiff'` | session only |
 
 ### Autosave
-- Key: `forma_autosave`
+- Key: `fooorma_autosave`
 - Debounced 500ms via `$effect`
 - Saves: `{ layers, artW, artH, customPalettes, customPatterns, activeIdx }`
 
@@ -207,11 +207,11 @@ After positional args, shapes accept stroke/transform/effects in any order. The 
 ## 7. Persistence
 
 ### Autosave (localStorage)
-Key `forma_autosave` — JSON with layers, dimensions, palettes, patterns, active index.
+Key `fooorma_autosave` — JSON with layers, dimensions, palettes, patterns, active index.
 
-### .forma File Format (`src/lib/persist/index.ts`)
+### .ooo File Format (`src/lib/persist/index.ts`)
 ```
-// forma v1
+// fooorma v1
 // Artboard: 794 × 1123
 // @palette "Name" #hex1 #hex2 ...
 // @layer "Name" [hidden] [bg:#hex] [mode:manual]
@@ -316,7 +316,7 @@ Always create new arrays/objects — never mutate. Use `layers.map()`, spread op
 | `src/lib/query/index.ts` | ~700 | Code sandbox, all shape/loop/effect functions |
 | `src/lib/layers/renderer2d.ts` | ~1000 | Canvas 2D rendering, 3D, effects |
 | `src/lib/layers/types.ts` | ~95 | All type definitions |
-| `src/lib/persist/index.ts` | ~120 | .forma serialization |
+| `src/lib/persist/index.ts` | ~120 | .ooo serialization |
 | `src/lib/export-cmyk-tiff.ts` | ~155 | CMYK TIFF encoding |
 | `src/lib/palettes/index.ts` | ~70 | Palette type + 8 builtins |
 | `src/lib/patterns/index.ts` | ~80 | Pattern type + 6 builtins |
@@ -328,9 +328,9 @@ Always create new arrays/objects — never mutate. Use `layers.map()`, spread op
 
 | Key | Content |
 |-----|---------|
-| `forma_autosave` | Full project JSON |
-| `forma_theme` | `'dark'` or `'light'` |
-| `forma_panel_w` | Right panel width (px) |
-| `forma_code_pos` | `'right'` or `'bottom'` |
-| `forma_code_h` | Bottom panel height (px) |
-| `forma_code_font` | Editor font size (px) |
+| `fooorma_autosave` | Full project JSON |
+| `fooorma_theme` | `'dark'` or `'light'` |
+| `fooorma_panel_w` | Right panel width (px) |
+| `fooorma_code_pos` | `'right'` or `'bottom'` |
+| `fooorma_code_h` | Bottom panel height (px) |
+| `fooorma_code_font` | Editor font size (px) |

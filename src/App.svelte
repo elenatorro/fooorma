@@ -48,10 +48,10 @@
   import { BUILTIN_PATTERNS } from './lib/patterns/index'
   import type { Palette } from './lib/palettes/index'
   import { MIN_ZOOM, MAX_ZOOM, MAX_RENDER_SCALE } from './lib/viewport'
-  import { FormaBridge } from './lib/mcp-bridge/index.svelte'
+  import { FooormaBridge } from './lib/mcp-bridge/index.svelte'
 
   // ── Theme ──────────────────────────────────────────────────────────────────
-  const THEME_KEY = 'forma_theme'
+  const THEME_KEY = 'fooorma_theme'
   let theme = $state<'dark' | 'light'>((localStorage.getItem(THEME_KEY) as 'dark' | 'light') ?? 'dark')
 
   $effect(() => {
@@ -72,7 +72,7 @@
   if (typeof window !== 'undefined') window.addEventListener('popstate', onPopState)
 
   // ── Autosave / restore ─────────────────────────────────────────────────────
-  const STORAGE_KEY = 'forma_autosave'
+  const STORAGE_KEY = 'fooorma_autosave'
 
   function loadAutosave() {
     try {
@@ -102,15 +102,15 @@
   let panY = $state(0)
 
   // ── Panel width (resizable + presets) ──────────────────────────────────────
-  let panelWidth = $state(parseInt(localStorage.getItem('forma_panel_w') ?? '280') || 280)
+  let panelWidth = $state(parseInt(localStorage.getItem('fooorma_panel_w') ?? '280') || 280)
   let resizeOrigin: { x: number; w: number } | null = null
 
   // ── Code panel ─────────────────────────────────────────────────────────────
-  let codePanelVisible = $state(localStorage.getItem('forma_code_visible') !== 'false')
-  let codePanelDock  = $state<'left' | 'bottom'>((localStorage.getItem('forma_code_dock') as 'left' | 'bottom') ?? 'left')
-  let codePanelW     = $state(parseInt(localStorage.getItem('forma_code_w') ?? '400') || 400)
-  let codePanelH     = $state(parseInt(localStorage.getItem('forma_code_h') ?? '280') || 280)
-  let codeEditScope  = $state<'layer' | 'file'>((localStorage.getItem('forma_code_scope') as 'layer' | 'file') ?? 'layer')
+  let codePanelVisible = $state(localStorage.getItem('fooorma_code_visible') !== 'false')
+  let codePanelDock  = $state<'left' | 'bottom'>((localStorage.getItem('fooorma_code_dock') as 'left' | 'bottom') ?? 'left')
+  let codePanelW     = $state(parseInt(localStorage.getItem('fooorma_code_w') ?? '400') || 400)
+  let codePanelH     = $state(parseInt(localStorage.getItem('fooorma_code_h') ?? '280') || 280)
+  let codeEditScope  = $state<'layer' | 'file'>((localStorage.getItem('fooorma_code_scope') as 'layer' | 'file') ?? 'layer')
 
   function startResize(e: PointerEvent) {
     resizeOrigin = { x: e.clientX, w: panelWidth }
@@ -130,7 +130,7 @@
 
   $effect(() => {
     document.documentElement.style.setProperty('--panel-w', `${panelWidth}px`)
-    localStorage.setItem('forma_panel_w', String(panelWidth))
+    localStorage.setItem('fooorma_panel_w', String(panelWidth))
   })
 
   $effect(() => {
@@ -138,11 +138,11 @@
     const bh = codePanelVisible && codePanelDock === 'bottom' ? codePanelH : 0
     document.documentElement.style.setProperty('--code-panel-w', `${lw}px`)
     document.documentElement.style.setProperty('--code-panel-h', `${bh}px`)
-    localStorage.setItem('forma_code_visible', String(codePanelVisible))
-    localStorage.setItem('forma_code_dock', codePanelDock)
-    localStorage.setItem('forma_code_w', String(codePanelW))
-    localStorage.setItem('forma_code_h', String(codePanelH))
-    localStorage.setItem('forma_code_scope', codeEditScope)
+    localStorage.setItem('fooorma_code_visible', String(codePanelVisible))
+    localStorage.setItem('fooorma_code_dock', codePanelDock)
+    localStorage.setItem('fooorma_code_w', String(codePanelW))
+    localStorage.setItem('fooorma_code_h', String(codePanelH))
+    localStorage.setItem('fooorma_code_scope', codeEditScope)
   })
 
   // Computed viewport size (minus bars)
@@ -755,13 +755,13 @@
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `forma-${Date.now()}@${s}x.tiff`
+      a.download = `fooorma-${Date.now()}@${s}x.tiff`
       a.click()
       URL.revokeObjectURL(url)
     } else {
       const a = document.createElement('a')
       a.href     = canvas.toDataURL('image/png')
-      a.download = `forma-${Date.now()}@${s}x.png`
+      a.download = `fooorma-${Date.now()}@${s}x.png`
       a.click()
     }
   }
@@ -868,13 +868,13 @@
   }
 
   // ── MCP Bridge ─────────────────────────────────────────────────────────────
-  let mcpBridge: FormaBridge | null = null
+  let mcpBridge: FooormaBridge | null = null
 
   function initMcpBridge() {
     const params = new URLSearchParams(window.location.search)
     if (!params.has('mcp') && !params.has('mcpPort')) return
     const port = parseInt(params.get('mcpPort') ?? '9876')
-    mcpBridge = new FormaBridge({
+    mcpBridge = new FooormaBridge({
       getState: () => ({
         layers: JSON.parse(JSON.stringify(layers)),
         artW, artH,

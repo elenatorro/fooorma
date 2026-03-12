@@ -4,7 +4,7 @@ import { createHandler } from './handler'
 
 const RECONNECT_INTERVAL = 10_000  // retry every 10s, silently
 
-export class FormaBridge {
+export class FooormaBridge {
   private ws: WebSocket | null = null
   private handler: (method: string, params?: Record<string, unknown>) => unknown
   private port: number

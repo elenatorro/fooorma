@@ -1,4 +1,4 @@
-# Forma - Procedural Art Studio
+# Fooorma - Procedural Art Studio
 
 ## Project Overview
 
@@ -174,5 +174,5 @@ Missing any surface is a bug. Always check all three before considering a shape 
 
 - Vite port **5173** is hardcoded (required by Tauri)
 - PWA enabled with Workbox caching (js, css, html, wasm, svg, png)
-- App ID: `dev.forma.app`
+- App ID: `dev.fooorma.app`
 - No CSP restrictions (`"csp": null`)

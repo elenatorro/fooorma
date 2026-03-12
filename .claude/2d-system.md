@@ -1,4 +1,4 @@
-# Forma 2D Shape System — Architecture Reference
+# Fooorma 2D Shape System — Architecture Reference
 
 ## Shape Types (8 total)
 `rect`, `ellipse`, `line`, `curve`, `triangle`, `arc`, `spline`, `group`

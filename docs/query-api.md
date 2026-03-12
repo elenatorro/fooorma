@@ -1,4 +1,4 @@
-# Forma Query API
+# Fooorma Query API
 
 The query language is a sandboxed JavaScript environment. Write plain JS — no `import`, no `const` required (though you can use `let`/`const` freely). Everything below is available globally.
 

@@ -13,7 +13,7 @@ export interface ProjectData {
 // ── Serialize ──────────────────────────────────────────────────────────────
 
 export function serializeProject({ layers, artW, artH, customPalettes = [], customPatterns = [] }: ProjectData): string {
-  const out: string[] = ['// forma v1', `// Artboard: ${artW} × ${artH}`, '']
+  const out: string[] = ['// fooorma v1', `// Artboard: ${artW} × ${artH}`, '']
 
   for (const p of customPalettes) {
     out.push(`// @palette "${p.name}" ${p.colors.join(' ')}`)
@@ -91,7 +91,7 @@ export function parseProject(content: string): ProjectData {
       continue
     }
 
-    if (line.startsWith('// forma v')) continue
+    if (line.startsWith('// fooorma v') || line.startsWith('// forma v')) continue
 
     // Artboard dimensions — handle both × (U+00D7) and x
     const artMatch = line.match(/^\/\/ Artboard: (\d+) [×x] (\d+)/)

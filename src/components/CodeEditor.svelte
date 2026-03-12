@@ -31,7 +31,7 @@
   let _syncing = false
 
   // ── Theme ─────────────────────────────────────────────────────────────────
-  const formaTheme = EditorView.theme({
+  const fooormaTheme = EditorView.theme({
     '&': {
       background: 'var(--cm-bg)',
       color: 'var(--cm-text)',
@@ -86,7 +86,7 @@
   }, { dark: true })
 
   // ── Syntax highlighting ───────────────────────────────────────────────────
-  const formaHighlight = HighlightStyle.define([
+  const fooormaHighlight = HighlightStyle.define([
     { tag: tags.comment,                      color: 'var(--cm-comment)', fontStyle: 'italic' },
     { tag: tags.string,                       color: 'var(--cm-string)' },
     { tag: tags.number,                       color: 'var(--cm-number)' },
@@ -100,7 +100,7 @@
   ])
 
   // ── Completions ───────────────────────────────────────────────────────────
-  const FORMA_COMPLETIONS: Completion[] = [
+  const FOOORMA_COMPLETIONS: Completion[] = [
     // Drawing
     snippetCompletion("rect(${x}, ${y}, ${w}, ${h})",
       { label: 'rect', detail: 'x, y, w, h, color?, opacity?, stroke?', type: 'function', boost: 10 }),
@@ -205,7 +205,7 @@
     const extras: Completion[] = extraCompletions.map(label => ({
       label, type: 'variable' as const, detail: 'palette', boost: 7,
     }))
-    return { from: word.from, options: [...FORMA_COMPLETIONS, ...extras], validFor: /^\w*$/ }
+    return { from: word.from, options: [...FOOORMA_COMPLETIONS, ...extras], validFor: /^\w*$/ }
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -217,13 +217,13 @@
         extensions: [
           history(),
           javascript(),
-          syntaxHighlighting(formaHighlight),
+          syntaxHighlighting(fooormaHighlight),
           autocompletion({ override: [completionSource], activateOnTyping: true }),
           indentUnit.of('  '),
           keymap.of([indentWithTab, ...historyKeymap, ...completionKeymap, ...defaultKeymap]),
           indentOnInput(),
           cmPlaceholder('// rect(x, y, w, h)  ellipse(x, y, w, h)  line(x1,y1,x2,y2)\n// repeat(n, (i, t) => { })  ·  grid(cols, rows, (c, r) => { })'),
-          formaTheme,
+          fooormaTheme,
           EditorView.updateListener.of(update => {
             if (update.docChanged && !_syncing) onChange(update.state.doc.toString())
             if (update.selectionSet || update.focusChanged) onCursorChange?.()
