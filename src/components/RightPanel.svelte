@@ -352,94 +352,94 @@ tile(5, (c, r, ct, rt) => {
     const is3D = s === 'cube' || s === 'sphere' || s === 'cylinder' || s === 'torus'
 
     if (tpl === 'single') {
-      if (s === 'arc')      return `arc(0.5, 0.5, 0.2, 0, 270, ${color}, ${op})`
+      if (s === 'arc')      return `arc(0.3, 0.3, 0.2, 0, 270, ${color}, ${op})`
       if (s === 'line')     return `line(0.1, 0.5, 0.9, 0.5, ${color}, ${op})`
       if (s === 'curve')    return `curve(0.1, 0.5, 0.5, 0.1, 0.9, 0.5, ${color}, ${op})`
       if (s === 'triangle') return `triangle(0.5, 0.1, 0.2, 0.9, 0.8, 0.9, ${color}, ${op})`
-      if (s === 'cylinder') return `cylinder(0.5, 0.5, 0.25, 0.35, ${color}, ${op})`
-      if (is3D)             return `${s}(0.5, 0.5, 0.35, ${color}, ${op})`
-      return `${s}(0.5, 0.5, 0.7, 0.7, ${color}, ${op})`
+      if (s === 'cylinder') return `cylinder(0.35, 0.3, 0.25, 0.35, ${color}, ${op})`
+      if (is3D)             return `${s}(0.3, 0.3, 0.35, ${color}, ${op})`
+      return `${s}(0.15, 0.15, 0.7, 0.7, ${color}, ${op})`
     }
 
     if (tpl === 'row') {
       if (s === 'rect' || s === 'ellipse')
-        return `repeat(${n}, (i, t) => {\n  ${s}((i + 0.5) / ${n}, 0.5, 1/${n} * 0.85, 0.4, ${color}, ${op})\n})`
+        return `repeat(${n}, (i, t) => {\n  const sw = 0.85 / ${n}\n  ${s}((i + 0.5) / ${n} - sw / 2, 0.3, sw, 0.4, ${color}, ${op})\n})`
       if (s === 'arc')
-        return `repeat(${n}, (i, t) => {\n  arc((i + 0.5) / ${n}, 0.5, 1/${n} * 0.4, 0, 270, ${color}, ${op})\n})`
+        return `repeat(${n}, (i, t) => {\n  const r = 0.4 / ${n}\n  arc((i + 0.5) / ${n} - r, 0.35, r, 0, 270, ${color}, ${op})\n})`
       if (s === 'line')
         return `repeat(${n}, (i, t) => {\n  line(0.1, (i + 0.5) / ${n}, 0.9, (i + 0.5) / ${n}, ${color}, ${op})\n})`
       if (s === 'curve')
         return `repeat(${n}, (i, t) => {\n  const y = (i + 0.5) / ${n}\n  curve(0.1, y - 0.06, 0.5, y + 0.06, 0.9, y - 0.06, ${color}, ${op})\n})`
       if (s === 'cylinder')
-        return `repeat(${n}, (i, t) => {\n  cylinder((i + 0.5) / ${n}, 0.5, 1/${n} * 0.7, 0.3, ${color}, ${op})\n})`
+        return `repeat(${n}, (i, t) => {\n  const sw = 0.7 / ${n}\n  cylinder((i + 0.5) / ${n} - sw / 2, 0.35, sw, 0.3, ${color}, ${op})\n})`
       if (is3D)
-        return `repeat(${n}, (i, t) => {\n  ${s}((i + 0.5) / ${n}, 0.5, 1/${n} * 0.8, ${color}, ${op})\n})`
+        return `repeat(${n}, (i, t) => {\n  const sz = 0.8 / ${n}\n  ${s}((i + 0.5) / ${n} - sz / 2, 0.35, sz, ${color}, ${op})\n})`
       return `repeat(${n}, (i, t) => {\n  const cx = (i + 0.5) / ${n}\n  const d = 1/${n} * 0.4\n  triangle(cx, 0.5 - d, cx - d, 0.5 + d, cx + d, 0.5 + d, ${color}, ${op})\n})`
     }
 
     if (tpl === 'grid') {
       if (s === 'rect' || s === 'ellipse')
-        return `grid(${nc}, ${nr}, (c, r) => {\n  ${s}((c + 0.5) / ${nc}, (r + 0.5) / ${nr}, 1/${nc} * 0.85, 1/${nr} * 0.85, ${color}, ${op})\n})`
+        return `grid(${nc}, ${nr}, (c, r) => {\n  const sw = 0.85 / ${nc}\n  const sh = 0.85 / ${nr}\n  ${s}((c + 0.5) / ${nc} - sw / 2, (r + 0.5) / ${nr} - sy(sh) / 2, sw, sh, ${color}, ${op})\n})`
       if (s === 'arc')
-        return `grid(${nc}, ${nr}, (c, r) => {\n  arc((c + 0.5) / ${nc}, (r + 0.5) / ${nr}, 1/${nc} * 0.4, 0, 270, ${color}, ${op})\n})`
+        return `grid(${nc}, ${nr}, (c, r) => {\n  const rad = 0.4 / ${nc}\n  arc((c + 0.5) / ${nc} - rad, (r + 0.5) / ${nr} - sy(rad) / 2, rad, 0, 270, ${color}, ${op})\n})`
       if (s === 'line')
         return `grid(${nc}, ${nr}, (c, r) => {\n  const x = (c + 0.5) / ${nc}\n  const y = (r + 0.5) / ${nr}\n  const d = 1/${nc} * 0.4\n  line(x - d, y, x + d, y, ${color}, ${op})\n})`
       if (s === 'curve')
         return `grid(${nc}, ${nr}, (c, r) => {\n  const x = (c + 0.5) / ${nc}\n  const y = (r + 0.5) / ${nr}\n  const d = 1/${nc} * 0.4\n  curve(x - d, y, x, y - d, x + d, y, ${color}, ${op})\n})`
       if (s === 'cylinder')
-        return `grid(${nc}, ${nr}, (c, r) => {\n  cylinder((c + 0.5) / ${nc}, (r + 0.5) / ${nr}, 1/${nc} * 0.7, 1/${nr} * 0.7, ${color}, ${op})\n})`
+        return `grid(${nc}, ${nr}, (c, r) => {\n  const sw = 0.7 / ${nc}\n  const sh = 0.7 / ${nr}\n  cylinder((c + 0.5) / ${nc} - sw / 2, (r + 0.5) / ${nr} - sy(sh) / 2, sw, sh, ${color}, ${op})\n})`
       if (is3D)
-        return `grid(${nc}, ${nr}, (c, r) => {\n  ${s}((c + 0.5) / ${nc}, (r + 0.5) / ${nr}, 1/${Math.max(nc, nr)} * 0.8, ${color}, ${op})\n})`
+        return `grid(${nc}, ${nr}, (c, r) => {\n  const sz = 0.8 / ${Math.max(nc, nr)}\n  ${s}((c + 0.5) / ${nc} - sz / 2, (r + 0.5) / ${nr} - sy(sz) / 2, sz, ${color}, ${op})\n})`
       return `grid(${nc}, ${nr}, (c, r) => {\n  const x = (c + 0.5) / ${nc}\n  const y = (r + 0.5) / ${nr}\n  const d = 1/${nc} * 0.4\n  triangle(x, y - d, x - d, y + d, x + d, y + d, ${color}, ${op})\n})`
     }
 
     // spiral
     if (tpl === 'spiral') {
       if (s === 'rect' || s === 'ellipse')
-        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  ${s}(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.03 + t * 0.05, 0.03 + t * 0.05, ${color}, ${op})\n})`
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const sz = 0.03 + t * 0.05\n  const px = 0.5 + cos(angle) * r\n  const py = 0.5 + sin(angle) * r * W / H\n  ${s}(px - sz / 2, py - sy(sz) / 2, sz, sz, ${color}, ${op})\n})`
       if (s === 'arc')
-        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  arc(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.03 + t * 0.05, 0, 270, ${color}, ${op})\n})`
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const sz = 0.03 + t * 0.05\n  const px = 0.5 + cos(angle) * r\n  const py = 0.5 + sin(angle) * r * W / H\n  arc(px - sz, py - sy(sz * 2) / 2, sz, 0, 270, ${color}, ${op})\n})`
       if (s === 'line')
-        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const len = 0.015 + t * 0.025\n  const nx = cos(angle + PI / 2) * len\n  const ny = sin(angle + PI / 2) * len\n  line(cx - nx, cy - ny, cx + nx, cy + ny, ${color}, ${op})\n})`
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const px = 0.5 + cos(angle) * r\n  const py = 0.5 + sin(angle) * r * W / H\n  const len = 0.015 + t * 0.025\n  const nx = cos(angle + PI / 2) * len\n  const ny = sin(angle + PI / 2) * len\n  line(px - nx, py - ny, px + nx, py + ny, ${color}, ${op})\n})`
       if (s === 'curve')
-        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.03 + t * 0.04\n  curve(cx - d, cy, cx, cy - d, cx + d, cy, ${color}, ${op})\n})`
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const px = 0.5 + cos(angle) * r\n  const py = 0.5 + sin(angle) * r * W / H\n  const d = 0.03 + t * 0.04\n  curve(px - d, py, px, py - d, px + d, py, ${color}, ${op})\n})`
       if (s === 'cylinder')
-        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const sz = 0.04 + t * 0.06\n  cylinder(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, sz * 0.7, sz, ${color}, ${op})\n})`
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const sz = 0.04 + t * 0.06\n  const px = 0.5 + cos(angle) * r\n  const py = 0.5 + sin(angle) * r * W / H\n  cylinder(px - sz * 0.35, py - sy(sz) / 2, sz * 0.7, sz, ${color}, ${op})\n})`
       if (is3D)
-        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  ${s}(0.5 + cos(angle) * r, 0.5 + sin(angle) * r, 0.04 + t * 0.06, ${color}, ${op})\n})`
-      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const cx = 0.5 + cos(angle) * r\n  const cy = 0.5 + sin(angle) * r\n  const d = 0.02 + t * 0.03\n  triangle(cx, cy - d, cx - d, cy + d, cx + d, cy + d, ${color}, ${op})\n})`
+        return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const sz = 0.04 + t * 0.06\n  const px = 0.5 + cos(angle) * r\n  const py = 0.5 + sin(angle) * r * W / H\n  ${s}(px - sz / 2, py - sy(sz) / 2, sz, ${color}, ${op})\n})`
+      return `repeat(${n}, (i, t) => {\n  const angle = t * TAU * 3\n  const r = 0.1 + t * 0.35\n  const px = 0.5 + cos(angle) * r\n  const py = 0.5 + sin(angle) * r * W / H\n  const d = 0.02 + t * 0.03\n  triangle(px, py - d, px - d, py + d, px + d, py + d, ${color}, ${op})\n})`
     }
 
     // wave
     if (tpl === 'wave') {
       if (s === 'rect' || s === 'ellipse')
-        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  ${s}(x, y, 1/${n} * 0.7, 1/${n} * 0.7, ${color}, ${op})\n})`
+        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  const sz = 0.7 / ${n}\n  ${s}(x - sz / 2, y - sy(sz) / 2, sz, sz, ${color}, ${op})\n})`
       if (s === 'arc')
-        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  arc(x, y, 1/${n} * 0.35, 0, 270, ${color}, ${op})\n})`
+        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  const r = 0.35 / ${n}\n  arc(x - r, y - sy(r * 2) / 2, r, 0, 270, ${color}, ${op})\n})`
       if (s === 'line')
         return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  line(x - 0.02, y, x + 0.02, y, ${color}, ${op})\n})`
       if (s === 'curve')
         return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  const d = 1/${n} * 0.3\n  curve(x - d, y, x, y - d, x + d, y, ${color}, ${op})\n})`
       if (s === 'cylinder')
-        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  cylinder(x, y, 1/${n} * 0.5, 1/${n} * 0.7, ${color}, ${op})\n})`
+        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  const sw = 0.5 / ${n}\n  const sh = 0.7 / ${n}\n  cylinder(x - sw / 2, y - sy(sh) / 2, sw, sh, ${color}, ${op})\n})`
       if (is3D)
-        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  ${s}(x, y, 1/${n} * 0.7, ${color}, ${op})\n})`
+        return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  const sz = 0.7 / ${n}\n  ${s}(x - sz / 2, y - sy(sz) / 2, sz, ${color}, ${op})\n})`
       return `wave(${n}, 0.2, 1.5, (i, t, x, y) => {\n  const d = 1/${n} * 0.35\n  triangle(x, y - d, x - d, y + d, x + d, y + d, ${color}, ${op})\n})`
     }
 
     // circular
     if (s === 'rect' || s === 'ellipse')
-      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  ${s}(x, y, 0.08, 0.08, ${color}, ${op})\n})`
+      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  ${s}(x - 0.04, y - sy(0.08) / 2, 0.08, 0.08, ${color}, ${op})\n})`
     if (s === 'arc')
-      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  arc(x, y, 0.04, 0, 270, ${color}, ${op})\n})`
+      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  arc(x - 0.04, y - sy(0.08) / 2, 0.04, 0, 270, ${color}, ${op})\n})`
     if (s === 'line')
       return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  const nx = cos(angle) * 0.03\n  const ny = sin(angle) * 0.03\n  line(x - nx, y - ny, x + nx, y + ny, ${color}, ${op})\n})`
     if (s === 'curve')
       return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  const d = 0.04\n  curve(x - d, y, x, y - d, x + d, y, ${color}, ${op})\n})`
     if (s === 'cylinder')
-      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  cylinder(x, y, 0.06, 0.08, ${color}, ${op})\n})`
+      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  cylinder(x - 0.03, y - sy(0.08) / 2, 0.06, 0.08, ${color}, ${op})\n})`
     if (is3D)
-      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  ${s}(x, y, 0.08, ${color}, ${op})\n})`
+      return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  ${s}(x - 0.04, y - sy(0.08) / 2, 0.08, ${color}, ${op})\n})`
     return `circular(${n}, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {\n  const d = 0.03\n  triangle(x, y - d, x - d, y + d, x + d, y + d, ${color}, ${op})\n})`
   }
 

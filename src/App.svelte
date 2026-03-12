@@ -692,7 +692,7 @@
   // ── New ────────────────────────────────────────────────────────────────────
   function handleNew() {
     const id = crypto.randomUUID()
-    layers        = [{ id, name: 'Layer 1', visible: true, mode: 'manual', shapes: [], query: '' }]
+    layers        = [{ id, name: 'Layer 1', visible: true, bgColor: '#ffffff', mode: 'manual', shapes: [], query: '' }]
     activeLayerId = id
     activeShapeId = null
     selectedShapeIds = []
