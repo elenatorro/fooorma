@@ -37,6 +37,7 @@
   import { initEditorFont } from './lib/editor-font'
   initEditorFont()
 
+  import AboutPage       from './components/AboutPage.svelte'
   import TopBar          from './components/TopBar.svelte'
   import RightPanel      from './components/RightPanel.svelte'
   import CodePanel       from './components/CodePanel.svelte'
@@ -47,6 +48,7 @@
   import { BUILTIN_PATTERNS } from './lib/patterns/index'
   import type { Palette } from './lib/palettes/index'
   import { MIN_ZOOM, MAX_ZOOM, MAX_RENDER_SCALE } from './lib/viewport'
+  import { FormaBridge } from './lib/mcp-bridge/index.svelte'
 
   // ── Theme ──────────────────────────────────────────────────────────────────
   const THEME_KEY = 'forma_theme'
@@ -59,6 +61,15 @@
   })
 
   function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark' }
+
+  // ── Page routing ─────────────────────────────────────────────────────────
+  let page = $state<'app' | 'about'>(location.hash === '#/about' ? 'about' : 'app')
+
+  function goAbout() { page = 'about'; history.pushState(null, '', '#/about') }
+  function goApp()   { page = 'app';   history.pushState(null, '', '#/') }
+
+  function onPopState() { page = location.hash === '#/about' ? 'about' : 'app' }
+  if (typeof window !== 'undefined') window.addEventListener('popstate', onPopState)
 
   // ── Autosave / restore ─────────────────────────────────────────────────────
   const STORAGE_KEY = 'forma_autosave'
@@ -253,13 +264,14 @@
     layers.find(l => l.id === activeLayerId)?.mode === 'code' ? null : activeLayerId
   )
 
-  function handleAddLayer() {
+  function handleAddLayer(name?: string): string {
     commit()
     const id = crypto.randomUUID()
     const n  = layers.length + 1
-    layers = [...layers, { id, name: `Layer ${n}`, visible: true, mode: 'manual', shapes: [], query: '' }]
+    layers = [...layers, { id, name: name ?? `Layer ${n}`, visible: true, mode: 'manual', shapes: [], query: '' }]
     activeLayerId = id
     activeShapeId = null
+    return id
   }
 
   function handleSelectLayer(id: string) {
@@ -327,7 +339,7 @@
             }
           } catch { /* query eval failed — regenerate */ }
         }
-        const query = shapesToCode(l.shapes)
+        const query = shapesToCode(l.shapes, artW, artH)
         return { ...l, mode, query }
       } else {
         // code → manual: evaluate query and bake into layer.shapes
@@ -481,12 +493,14 @@
   }
 
   // ── Palette handlers ───────────────────────────────────────────────────────
-  function handleAddPalette() {
+  function handleAddPalette(name?: string, colors?: string[]): string {
+    const id = crypto.randomUUID()
     customPalettes = [...customPalettes, {
-      id: crypto.randomUUID(),
-      name: `Palette ${customPalettes.length + 1}`,
-      colors: ['#8b5cf6', '#4ecdc4', '#f7c68a'],
+      id,
+      name: name ?? `Palette ${customPalettes.length + 1}`,
+      colors: colors ?? ['#8b5cf6', '#4ecdc4', '#f7c68a'],
     }]
+    return id
   }
 
   function handleUpdatePalette(id: string, update: Partial<Palette>) {
@@ -497,8 +511,10 @@
     customPalettes = customPalettes.filter(p => p.id !== id)
   }
 
-  function handleAddPattern(pattern: Pattern) {
-    customPatterns = [...customPatterns, { ...pattern, id: crypto.randomUUID() }]
+  function handleAddPattern(pattern: Pattern): string {
+    const id = crypto.randomUUID()
+    customPatterns = [...customPatterns, { ...pattern, id }]
+    return id
   }
 
   function handleUpdatePattern(id: string, update: Partial<Pattern>) {
@@ -532,7 +548,7 @@
   let ctx2d: CanvasRenderingContext2D | null = null
   let rafId: number
   let dirty = true
-  let warmup = 3  // render unconditionally for first N frames (Firefox $effect timing)
+  let warmup = 6  // render unconditionally for first N frames (Firefox filter/pattern init)
 
   function markDirty() { dirty = true }
 
@@ -690,7 +706,7 @@
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
     a.href     = url
-    a.download = 'project.forma'
+    a.download = 'project.ooo'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -851,14 +867,63 @@
     if (e.key === '-') { e.preventDefault(); stepZoom(-1) }
   }
 
+  // ── MCP Bridge ─────────────────────────────────────────────────────────────
+  let mcpBridge: FormaBridge | null = null
+
+  function initMcpBridge() {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.has('mcp') && !params.has('mcpPort')) return
+    const port = parseInt(params.get('mcpPort') ?? '9876')
+    mcpBridge = new FormaBridge({
+      getState: () => ({
+        layers: JSON.parse(JSON.stringify(layers)),
+        artW, artH,
+        customPalettes: JSON.parse(JSON.stringify(customPalettes)),
+        customPatterns: JSON.parse(JSON.stringify(customPatterns)),
+        activeLayerId,
+      }),
+      getSerializedProject: () => serializeProject({ layers, artW, artH, customPalettes, customPatterns }),
+      setArtboardSize: (w, h) => handleSizeChange(w, h),
+      addLayer: (name) => handleAddLayer(name),
+      deleteLayer: handleDeleteLayer,
+      renameLayer: handleRenameLayer,
+      setLayerVisible: (id, visible) => {
+        commit()
+        layers = layers.map(l => l.id === id ? { ...l, visible } : l)
+      },
+      setLayerBg: handleUpdateLayerBg,
+      setLayerMode: handleSetMode,
+      setLayerCode: handleSetQuery,
+      moveLayer: handleMoveLayerTo,
+      selectLayer: handleSelectLayer,
+      addPalette: (name, colors) => handleAddPalette(name, colors),
+      updatePalette: (id, name, colors) => {
+        const patch: Partial<Palette> = {}
+        if (name !== undefined) patch.name = name
+        if (colors !== undefined) patch.colors = colors
+        handleUpdatePalette(id, patch)
+      },
+      deletePalette: handleDeletePalette,
+      addPattern: (name, code) => handleAddPattern({
+        id: '', name, code,
+        type: 'single', shape: 'rect', color: '#8b5cf6',
+        opacity: 1, count: 1, cols: 1, rows: 1,
+      }),
+      deletePattern: handleDeletePattern,
+      applyFile: handleApplyFile,
+    }, port)
+  }
+
   onMount(() => {
     updateVP()
+    initMcpBridge()
     const ro = new ResizeObserver(() => updateVP())
     ro.observe(document.body)
     window.addEventListener('keydown', handleKeyDown)
     return () => {
       ro.disconnect()
       window.removeEventListener('keydown', handleKeyDown)
+      mcpBridge?.disconnect()
     }
   })
 
@@ -867,6 +932,9 @@
   })
 </script>
 
+{#if page === 'about'}
+  <AboutPage onBack={goApp} />
+{:else}
 <TopBar
   {artW}
   {artH}
@@ -881,6 +949,7 @@
   onSave={handleSave}
   onLoad={handleLoad}
   onToggleTheme={toggleTheme}
+  onAbout={goAbout}
 />
 
 <Viewport
@@ -992,6 +1061,7 @@
   ondblclick={() => { panelWidth = Math.round(window.innerWidth * 0.5); updateVP() }}
   title="Drag to resize · Double-click for 50%"
 ></div>
+{/if}
 
 <style>
   /* ── CSS custom properties ─────────────────────────────────────────────── */

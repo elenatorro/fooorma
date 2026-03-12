@@ -1,10 +1,10 @@
 export interface ApiSnippet { name: string; sig: string; code: string }
 
 export const API_SNIPPETS: ApiSnippet[] = [
-  { name: 'rect',        sig: 'x, y, w, h, color?, opacity?, stroke?',               code: "rect(0.5, 0.5, 0.3, 0.3, '#8b5cf6', 0.85)" },
-  { name: 'ellipse',     sig: 'x, y, w, h, color?, opacity?, stroke?',               code: "ellipse(0.5, 0.5, 0.3, 0.3, '#8b5cf6', 0.85)" },
+  { name: 'rect',        sig: 'x, y, w, h, color?, opacity?, stroke?',               code: "// x,y = top-left corner\nrect(0.35, 0.35, 0.3, 0.3, '#8b5cf6', 0.85)" },
+  { name: 'ellipse',     sig: 'x, y, w, h, color?, opacity?, stroke?',               code: "// x,y = top-left corner\nellipse(0.35, 0.35, 0.3, 0.3, '#8b5cf6', 0.85)" },
   { name: 'triangle',    sig: 'x1,y1, x2,y2, x3,y3, color?, opacity?, stroke?',      code: "triangle(0.5, 0.1, 0.2, 0.9, 0.8, 0.9, '#8b5cf6', 0.85)" },
-  { name: 'arc',         sig: 'cx, cy, r, startDeg, endDeg, color?, opacity?',       code: "arc(0.5, 0.5, 0.2, 0, 270, '#8b5cf6', 0.85)" },
+  { name: 'arc',         sig: 'x, y, r, startDeg, endDeg, color?, opacity?',         code: "// x,y = top-left corner of bounding box\narc(0.3, 0.3, 0.2, 0, 270, '#8b5cf6', 0.85)" },
   { name: 'line',        sig: 'x1, y1, x2, y2, color?, opacity?, width?',            code: "line(0.1, 0.5, 0.9, 0.5, '#8b5cf6', 0.85)" },
   { name: 'curve',       sig: 'x1, y1, cx, cy, x2, y2, color?, opacity?, width?',   code: "curve(0.1, 0.5, 0.5, 0.15, 0.9, 0.5, '#8b5cf6', 0.85)" },
   { name: 'spline',      sig: '[x1,y1,...], color?, opacity?, width?',               code: "spline([0.1, 0.3, 0.3, 0.7, 0.5, 0.4, 0.7, 0.7, 0.9, 0.3], '#8b5cf6', 0.85)" },

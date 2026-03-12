@@ -74,7 +74,7 @@
     activeLayer
       ? isCodeMode
         ? activeLayer.query
-        : (activeLayer.query.trim() || shapesToCode(activeLayer.shapes))
+        : (activeLayer.query.trim() || shapesToCode(activeLayer.shapes, artW, artH))
       : ''
   )
   const layerResult = $derived(
@@ -151,6 +151,130 @@
   function copyCode() { navigator.clipboard.writeText(editorValue) }
   function insertSnippet(code: string) { editorRef?.insertAtCursor(code) }
 
+  function beautify() {
+    const src = editorValue.trim()
+    if (!src) return
+
+    // Walk char by char, tracking depth and string context
+    let out = ''
+    let depth = 0
+    const T = '  '
+    let inStr: string | null = null  // quote char if inside string
+
+    function indent() { return T.repeat(depth) }
+
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i]
+
+      // String handling — pass through unchanged
+      if (inStr) {
+        out += ch
+        if (ch === '\\') { out += src[++i] ?? ''; continue }
+        if (ch === inStr) inStr = null
+        continue
+      }
+      if (ch === "'" || ch === '"' || ch === '`') {
+        inStr = ch; out += ch; continue
+      }
+
+      // Line comments — preserve whole line
+      if (ch === '/' && src[i + 1] === '/') {
+        let end = src.indexOf('\n', i)
+        if (end === -1) end = src.length
+        out += src.slice(i, end)
+        i = end - 1
+        continue
+      }
+
+      // Opening brace: newline + indent
+      if (ch === '{') {
+        out = out.replace(/\s+$/, '') + ' {\n'
+        depth++
+        out += indent()
+        while (i + 1 < src.length && /\s/.test(src[i + 1])) i++
+        continue
+      }
+
+      // Closing brace: dedent + newline
+      if (ch === '}') {
+        out = out.replace(/\s+$/, '') + '\n'
+        depth = Math.max(0, depth - 1)
+        out += indent() + '}'
+        continue
+      }
+
+      // Newlines: re-indent and collapse blanks
+      if (ch === '\n') {
+        out = out.replace(/[ \t]+$/, '') + '\n'
+        // skip consecutive whitespace
+        while (i + 1 < src.length && /[ \t]/.test(src[i + 1])) i++
+        // skip extra blank lines
+        if (i + 1 < src.length && src[i + 1] === '\n') continue
+        out += indent()
+        continue
+      }
+
+      // Semicolons: treat as newline
+      if (ch === ';') {
+        out = out.replace(/\s+$/, '') + '\n'
+        while (i + 1 < src.length && /\s/.test(src[i + 1])) i++
+        out += indent()
+        continue
+      }
+
+      // Arrow => : ensure spacing
+      if (ch === '=' && src[i + 1] === '>') {
+        out = out.replace(/\s+$/, '') + ' => '
+        i++
+        while (i + 1 < src.length && /[ \t]/.test(src[i + 1])) i++
+        continue
+      }
+
+      // Collapse multiple spaces/tabs into one
+      if (ch === ' ' || ch === '\t') {
+        if (out.length && !/[\s\n]/.test(out[out.length - 1])) out += ' '
+        while (i + 1 < src.length && /[ \t]/.test(src[i + 1])) i++
+        continue
+      }
+
+      out += ch
+    }
+
+    // Strip existing indentation, then re-indent by counting braces
+    const lines = out.trim().split('\n').map(l => l.trim()).filter((l, i, a) => l || (i > 0 && a[i - 1]))
+
+    // Count open/close braces on a line (ignoring strings and comments)
+    function braceCount(line: string): { open: number; close: number } {
+      let open = 0, close = 0, str: string | null = null
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i]
+        if (str) { if (c === '\\') { i++; continue }; if (c === str) str = null; continue }
+        if (c === "'" || c === '"' || c === '`') { str = c; continue }
+        if (c === '/' && line[i + 1] === '/') break
+        if (c === '{') open++
+        else if (c === '}') close++
+      }
+      return { open, close }
+    }
+
+    let d = 0
+    const final: string[] = []
+    for (const line of lines) {
+      if (!line) { final.push(''); continue }
+      const { open, close } = braceCount(line)
+      // Dedent for closing braces before printing this line
+      if (close > 0 && line.match(/^\}/)) d = Math.max(0, d - close)
+      else if (close > open) d = Math.max(0, d - (close - open))
+      final.push(T.repeat(d) + line)
+      // Adjust depth: net change
+      d = Math.max(0, d + open - close)
+      // If we dedented for a leading }, restore from opens on same line
+      if (close > 0 && line.match(/^\}/) && open > 0) d = Math.max(0, d)
+    }
+
+    handleChange(final.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n')
+  }
+
   // ── Resize ────────────────────────────────────────────────────────────────
   let resizing = false
   let resizeStart = { x: 0, y: 0, w: 0, h: 0 }
@@ -215,6 +339,7 @@
       {/if}
       <button class="cp-btn" onclick={() => adjustEditorFontSize(-1)} title="Decrease font size">A−</button>
       <button class="cp-btn" onclick={() => adjustEditorFontSize(1)} title="Increase font size">A+</button>
+      <button class="cp-btn" onclick={beautify} title="Beautify code">{'{ }'}</button>
       <button class="cp-btn" onclick={copyCode} title="Copy">copy</button>
       {#if scope === 'layer' && activeLayer && isCodeMode}
         <button class="cp-btn" onclick={() => onSetQuery(activeLayer.id, '')} title="Clear">clear</button>

@@ -90,12 +90,12 @@ function applyBevel(
   ctx.restore()
 }
 
-let _noiseCanvas: HTMLCanvasElement | null = null
-function getNoiseCanvas(): HTMLCanvasElement {
-  if (_noiseCanvas) return _noiseCanvas
-  _noiseCanvas = document.createElement('canvas')
-  _noiseCanvas.width = _noiseCanvas.height = 128
-  const nc = _noiseCanvas.getContext('2d')!
+// Eagerly create noise canvas at module load so the bitmap is ready before first render.
+// Firefox can return null from createPattern() if the source canvas was just created.
+const _noiseCanvas: HTMLCanvasElement = (() => {
+  const c = document.createElement('canvas')
+  c.width = c.height = 128
+  const nc = c.getContext('2d')!
   const img = nc.createImageData(128, 128)
   for (let i = 0; i < img.data.length; i += 4) {
     const v = Math.random() * 255 | 0
@@ -103,15 +103,15 @@ function getNoiseCanvas(): HTMLCanvasElement {
     img.data[i + 3] = 255
   }
   nc.putImageData(img, 0, 0)
-  return _noiseCanvas
-}
+  return c
+})()
 
 function applyNoise(
   ctx: CanvasRenderingContext2D,
   buildPath: () => void,
   amount: number,
 ): void {
-  const pat = ctx.createPattern(getNoiseCanvas(), 'repeat')
+  const pat = ctx.createPattern(_noiseCanvas, 'repeat')
   if (!pat) return
   ctx.save()
   buildPath()
@@ -168,6 +168,8 @@ function getWarpCtx(targetCanvas: HTMLCanvasElement, physW: number, physH: numbe
   let entry = _warpPool.get(targetCanvas)
   if (!entry) {
     const canvas = document.createElement('canvas')
+    canvas.width = physW
+    canvas.height = physH
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!
     entry = { canvas, ctx }
     _warpPool.set(targetCanvas, entry)
@@ -175,6 +177,8 @@ function getWarpCtx(targetCanvas: HTMLCanvasElement, physW: number, physH: numbe
   if (entry.canvas.width !== physW || entry.canvas.height !== physH) {
     entry.canvas.width  = physW
     entry.canvas.height = physH
+    // Re-acquire context — Firefox invalidates it after dimension change
+    entry.ctx = entry.canvas.getContext('2d', { willReadFrequently: true })!
   }
   return entry.ctx
 }
@@ -445,7 +449,7 @@ function drawFaces(
       dc.clip()
       dc.globalAlpha = 0.05 + matRoughness * 0.2
       dc.globalCompositeOperation = 'overlay'
-      const pat = dc.createPattern(getNoiseCanvas(), 'repeat')
+      const pat = dc.createPattern(_noiseCanvas, 'repeat')
       if (pat) { dc.fillStyle = pat; dc.fillRect(bx, by, bw, bh) }
       dc.restore()
     }

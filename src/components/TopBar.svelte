@@ -15,6 +15,7 @@
     onLoad,
     onNew,
     onToggleTheme,
+    onAbout,
   }: {
     artW: number
     artH: number
@@ -29,6 +30,7 @@
     onLoad: (file: File) => void
     onNew: () => void
     onToggleTheme: () => void
+    onAbout: () => void
   } = $props()
 
   // ── File open ──────────────────────────────────────────────────────────────
@@ -105,7 +107,8 @@
 </script>
 
 <header class="topbar">
-  <span class="logo">fooorma</span>
+  <span class="logo">fooorma</span><span class="beta-badge">beta</span>
+  <button class="info-btn" onclick={onAbout} title="About fooorma">ⓘ</button>
 
   <!-- Canvas size editor -->
   <div class="size-editor">
@@ -162,8 +165,8 @@
   <!-- File controls -->
   <div class="file-controls">
     <button class="file-btn" onclick={onNew} title="New blank canvas">New</button>
-    <button class="file-btn" onclick={openFilePicker} title="Open .forma file">Open</button>
-    <button class="file-btn" onclick={onSave} title="Save project as .forma">Save</button>
+    <button class="file-btn" onclick={openFilePicker} title="Open .ooo file">Open</button>
+    <button class="file-btn" onclick={onSave} title="Save project as .ooo">Save</button>
     <button class="file-btn theme-btn" onclick={onToggleTheme} title="Toggle light/dark theme">{theme === 'dark' ? '◑' : '◐'}</button>
   </div>
 
@@ -203,7 +206,7 @@
 <input
   bind:this={fileInput}
   type="file"
-  accept=".forma,.txt"
+  accept=".ooo,.forma,.txt"
   style:display="none"
   onchange={onFileChange}
 />
@@ -481,4 +484,34 @@
     inset: 0;
     z-index: 50;
   }
+
+  /* ── Beta badge + info button ── */
+  .beta-badge {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    padding: 1px 5px;
+    border-radius: 4px;
+    line-height: 1.4;
+  }
+
+  .info-btn {
+    background: none;
+    border: none;
+    color: var(--text-6);
+    font-size: 16px;
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background .12s, color .12s;
+    flex-shrink: 0;
+  }
+  .info-btn:hover { background: var(--bg-hover); color: var(--text-3); }
 </style>

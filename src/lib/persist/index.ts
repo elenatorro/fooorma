@@ -44,7 +44,7 @@ export function serializeProject({ layers, artW, artH, customPalettes = [], cust
 
     const query = layer.mode === 'code'
       ? layer.query.trim()
-      : shapesToCode(layer.shapes).trim()
+      : shapesToCode(layer.shapes, artW, artH).trim()
     if (query) out.push(query)
     out.push('')
   }

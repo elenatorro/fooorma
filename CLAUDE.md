@@ -69,13 +69,15 @@ Each sketch is a `SketchDef` with:
 
 ### Coordinate & Sizing Model
 
-- **Position**: `x` is 0–1 fraction of artW, `y` is 0–1 fraction of artH. `(0.5, 0.5)` = center.
+- **Position**: `x,y` is the **top-left corner** of the shape. `x` is 0–1 fraction of artW, `y` is 0–1 fraction of artH. `(0, 0)` = top-left of artboard.
 - **Size**: `w` and `h` are both in **artW-fractions** (uniform space). This means equal w/h values always produce a square, regardless of artboard aspect ratio.
 - **Dimension helpers** in the code API:
   - `w(v)` / `width(v)` — size as fraction of artboard width (identity, since sizes are already width-relative)
   - `h(v)` / `height(v)` — size as fraction of artboard height (converts to uniform space: `v * H / W`)
-  - Example: `rect(0.5, 0.5, w(0.3), h(0.5))` = 30% of width × 50% of height
-  - Example: `rect(0.5, 0.5, 0.3, 0.3)` = always a square (300×300 on a 1000px-wide artboard)
+  - `sy(v)` — convert a size (artW-fraction) to a y-position offset (artH-fraction). Useful for centering: `ellipse(cx - s/2, cy - sy(s)/2, s, s)`
+  - Example: `rect(0, 0, 0.3, 0.3)` = top-left at origin, always a square
+  - Example: `rect(0.35, 0.35, 0.3, 0.3)` = roughly centered on artboard
+- **Internal representation**: The geom data model uses center-based coordinates. The code API converts top-left → center in `makeShape()` and center → top-left in `shapesToCode()`. Manual mode and the renderer work with center-based geom.
 
 ## Code API — Loop & Tile Functions
 
@@ -141,7 +143,7 @@ tile(4, (c, r) => {
 
 **Saving stamps:** From the Patterns tab — either from selected shapes (manual mode) or from current code (code mode). Stamps are saved to `customPatterns` with `code` set.
 
-**Persistence:** Stamps are serialized in `.forma` files as plain code blocks and auto-saved to localStorage:
+**Persistence:** Stamps are serialized in `.ooo` files as plain code blocks and auto-saved to localStorage:
 ```
 // @stamp "Diamond"
 rect(0.5, 0.5, 0.3, 0.3, '#8b5cf6', 0.85)

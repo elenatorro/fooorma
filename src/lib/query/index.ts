@@ -1,9 +1,16 @@
 import type { ColorStop, Gradient, LinearGradient, Pattern, RadialGradient, Shape, ShapeEffect, ShapeStroke, ShapeTransform, ShapeType } from '../layers/types'
 
 /** Serialize manual shapes to equivalent query code. */
-export function shapesToCode(shapes: Shape[]): string {
+export function shapesToCode(shapes: Shape[], artW = 794, artH = 1123): string {
   if (shapes.length === 0) return ''
   const f = (n: number) => parseFloat(n.toFixed(4))
+  // Convert center-based geom to top-left (x,y) for the code API
+  const _hToY = artW / (2 * artH)  // converts half of h (artW-fraction) to artH-fraction offset
+  const toTL = (cx: number, cy: number, w: number, h: number) => ({
+    x: cx - w / 2,
+    y: cy - h * _hToY,
+    w, h,
+  })
 
   function stopStr(st: ColorStop): string {
     return `['${st.hex}', ${f(st.opacity)}, ${f(st.pos)}]`
@@ -92,13 +99,16 @@ export function shapesToCode(shapes: Shape[]): string {
     }
   }
 
-  return shapes.map(({ type, geom: { x, y, w, h }, color, stroke, pts, strokeWidth, transform, effects, children }) => {
+  return shapes.map(({ type, geom, color, stroke, pts, strokeWidth, transform, effects, children }) => {
     // Serialize group shapes
     if (type === 'group' && children?.length) {
       const efx = effects?.length ? effects.map(effectStr).join(', ') : ''
-      const inner = shapesToCode(children).split('\n').map(l => '  ' + l).join('\n')
+      const inner = shapesToCode(children, artW, artH).split('\n').map(l => '  ' + l).join('\n')
       return `beginGroup(${efx})\n${inner}\nendGroup()`
     }
+
+    // Convert center-based geom to top-left for the code API
+    const { x, y, w, h } = toTL(geom.x, geom.y, geom.w, geom.h)
 
     const is3D = type === 'cube' || type === 'sphere' || type === 'cylinder' || type === 'torus'
     const { hex, opacity, gradient } = color
@@ -284,6 +294,12 @@ export function evaluateQuery(
   }
 
   // ── Drawing primitives ────────────────────────────────────────────────────
+  // Convert top-left (x,y) to center-based geom used by the renderer.
+  // h is in artW-fractions (uniform sizing), y is in artH-fractions.
+  // In tile-local space both axes are 0–1, so _hToY becomes 0.5.
+  const _globalHToY = artW / (2 * artH)
+  let _hToY = _globalHToY
+
   function makeShape(
     type: ShapeType,
     x: number, y: number, w: number, h: number,
@@ -297,7 +313,10 @@ export function evaluateQuery(
     const shapeColor = typeof colorArg === 'string'
       ? { hex: colorArg, opacity: Math.max(0, Math.min(1, opacity)) }
       : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
-    const shape: Shape = { id: crypto.randomUUID(), type, color: shapeColor, geom: { x, y, w, h } }
+    // x,y = top-left corner → convert to center for internal geom
+    const cx = x + w / 2
+    const cy = y + h * _hToY
+    const shape: Shape = { id: crypto.randomUUID(), type, color: shapeColor, geom: { x: cx, y: cy, w, h } }
     if (stroke)          shape.stroke    = stroke
     if (xform)           shape.transform = xform
     if (effects.length)  shape.effects   = effects
@@ -336,16 +355,20 @@ export function evaluateQuery(
     shapes.push(shape)
   }
 
-  const arc = (cx: number, cy: number, r: number, startAngle: number, endAngle: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
+  const arc = (x: number, y: number, r: number, startAngle: number, endAngle: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
     if (shapes.length >= MAX_SHAPES) return
     const { stroke, transform: xform, effects } = collectTrailing(trailing)
     const shapeColor = typeof colorArg === 'string' || colorArg === undefined
       ? { hex: colorArg ?? '#8b5cf6', opacity: Math.max(0, Math.min(1, opacity ?? 0.85)) }
       : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
+    // x,y = top-left corner → convert to center
+    const d = r * 2
+    const cx = x + d / 2
+    const cy = y + d * _hToY
     const shape: Shape = {
       id: crypto.randomUUID(), type: 'arc',
       color: shapeColor,
-      geom: { x: cx, y: cy, w: r * 2, h: r * 2 },
+      geom: { x: cx, y: cy, w: d, h: d },
       pts: [startAngle, endAngle],
     }
     if (stroke)         shape.stroke    = stroke
@@ -613,9 +636,13 @@ export function evaluateQuery(
         const rt = nr > 1 ? r / (nr - 1) : 0
 
         // Capture shapes drawn inside the callback
+        // In tile-local space both axes are 0–1, so use 0.5 for h→y conversion
         _tileCtx = { ox: cellOx, oy: cellOy, tw, th, mx: false, my: false }
+        const prevHToY = _hToY
+        _hToY = 0.5
         const startIdx = shapes.length
         _cb(c, r, ct, rt)
+        _hToY = prevHToY
         const localShapes = shapes.splice(startIdx)
         const { ox, oy, mx, my } = _tileCtx
         _tileCtx = null
@@ -637,6 +664,11 @@ export function evaluateQuery(
   const width  = w
   const h      = (v: number): number => v * artH / artW
   const height = h
+
+  // Convert a size (artW-fraction) to a y-position offset (artH-fraction).
+  // Useful for computing top-left y from a center point:
+  //   ellipse(cx - s/2, cy - sy(s)/2, s, s)
+  const sy     = (v: number): number => v * artW / artH
 
   // ── Stamp (reusable shape group) ────────────────────────────────────────
   // stamp('name')              — place shapes centered at (0.5, 0.5)
@@ -764,7 +796,7 @@ export function evaluateQuery(
       'stamp',
       'grad', 'radGrad',
       'palette',
-      'w', 'width', 'h', 'height',
+      'w', 'width', 'h', 'height', 'sy',
       'W', 'H',
       'PI', 'TAU', 'E',
       'sin', 'cos', 'tan', 'abs', 'floor', 'ceil', 'round', 'sqrt', 'pow', 'min', 'max', 'random',
@@ -780,7 +812,7 @@ export function evaluateQuery(
       stamp,
       grad, radGrad,
       palette,
-      w, width, h, height,
+      w, width, h, height, sy,
       artW, artH,
       Math.PI, Math.PI * 2, Math.E,
       Math.sin, Math.cos, Math.tan, Math.abs, Math.floor, Math.ceil,

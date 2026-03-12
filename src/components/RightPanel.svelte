@@ -176,8 +176,8 @@ repeat(14, (i, a) => {
       code: `// tile(cols, cb) — square tiles, rows auto-computed from aspect ratio
 tile(14, (c, r, ct, rt) => {
   const n = nz(ct * 4, rt * 4)
-  const s = lerp(0.1, 0.4, n)
-  ellipse(0.5, 0.5, s, s, palette('Neon', c + r), lerp(0.35, 1, n))
+  const sz = lerp(0.1, 0.4, n)
+  ellipse((1 - sz) / 2, (1 - sz) / 2, sz, sz, palette('Neon', c + r), lerp(0.35, 1, n))
 })`,
     },
     {
@@ -187,20 +187,20 @@ tile(14, (c, r, ct, rt) => {
   const angle = t * TAU * 5
   const r = 0.04 + t * 0.42
   const s = 0.01 + t * 0.024
-  ellipse(
-    0.5 + cos(angle) * r,
-    0.5 + sin(angle) * r * (W / H),
-    s, s, palette('Sunset', i % 6), lerp(0.3, 1, t))
+  const px = 0.5 + cos(angle) * r
+  const py = 0.5 + sin(angle) * r * W / H
+  ellipse(px - s / 2, py - sy(s) / 2, s, s,
+    palette('Sunset', i % 6), lerp(0.3, 1, t))
 })`,
     },
     {
       name: 'Burst',
       desc: 'Radial lines arranged in a ring',
-      code: `// circular(n, cx, cy, r, (i, t, x, y, angle) => ...) — t: 0→1, x/y: point, angle: radians
+      code: `// circular(n, cx, cy, r, (i, t, x, y, angle) => ...)
 circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
   const ir = 0.08
   const x0 = 0.5 + cos(angle) * ir
-  const y0 = 0.5 + sin(angle) * ir * (W / H)
+  const y0 = 0.5 + sin(angle) * ir * W / H
   line(x0, y0, x, y, palette('Neon', i % 7), lerp(0.3, 0.85, t), 0.002)
 })`,
     },
@@ -209,7 +209,9 @@ circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
       desc: 'Stacked gradient rings',
       code: `repeat(24, (i, t) => {
   const r = lerp(0.03, 0.47, t)
-  ellipse(0.5, 0.5, r * 2, r * 2 * (W / H),
+  const d = r * 2
+  const dh = d * (W / H)
+  ellipse(0.5 - r, 0.5 - sy(dh) / 2, d, dh,
     grad(0, '#0d3460', '#4ecdc4', '#f0f7ff'),
     lerp(0.03, 0.4, 1 - t))
 })`,
@@ -230,8 +232,8 @@ circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
       desc: 'Rotated rectangles sized by noise',
       code: `tile(8, (c, r, ct, rt) => {
   const n = nz(ct * 3, rt * 3)
-  const s = lerp(0.4, 0.9, n)
-  rect(0.5, 0.5, s, s,
+  const sz = lerp(0.4, 0.9, n)
+  rect((1 - sz) / 2, (1 - sz) / 2, sz, sz,
     palette('Ember', floor(n * 6)), lerp(0.5, 1, n),
     rotate(n * 90))
 }, { gapX: 0.003, gapY: 0.003 })`,
@@ -239,10 +241,10 @@ circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
     {
       name: 'Wave Dots',
       desc: 'Circles distributed along a sine wave',
-      code: `// wave(n, amp, freq, (i, t, x, y) => ...) — t: 0→1, x/y: wave position
+      code: `// wave(n, amp, freq, (i, t, x, y) => ...) — x/y: center point on wave
 wave(40, 0.28, 1.5, (i, t, x, y) => {
   const s = 0.012 + nz(t * 6) * 0.016
-  ellipse(x, y, s, s, palette('Ocean', i % 6), lerp(0.4, 1, t))
+  ellipse(x - s / 2, y - sy(s) / 2, s, s, palette('Ocean', i % 6), lerp(0.4, 1, t))
 })`,
     },
     {
@@ -250,8 +252,8 @@ wave(40, 0.28, 1.5, (i, t, x, y) => {
       desc: 'Metallic cubes in a grid with sharp highlights',
       code: `tile(5, (c, r, ct, rt) => {
   const n = nz(ct * 3, rt * 3)
-  const s = lerp(0.4, 0.85, n)
-  cube(0.5, 0.5, s, palette('Neon', c + r), lerp(0.6, 1, n),
+  const sz = lerp(0.4, 0.85, n)
+  cube((1 - sz) / 2, (1 - sz) / 2, sz, palette('Neon', c + r), lerp(0.6, 1, n),
     transform({ rotateX: 30 + n * 25, rotateY: 40 + n * 30 }), material('metal'))
 })`,
     },
@@ -260,7 +262,7 @@ wave(40, 0.28, 1.5, (i, t, x, y) => {
       desc: 'Glossy plastic spheres along a wave',
       code: `wave(18, 0.22, 1.2, (i, t, x, y) => {
   const s = lerp(0.04, 0.08, nz(t * 5))
-  sphere(x, y, s, palette('Sunset', i % 6), 0.9,
+  sphere(x - s / 2, y - sy(s) / 2, s, palette('Sunset', i % 6), 0.9,
     transform({ rotateX: 25, rotateY: t * 60, smooth: 24 }), material('plastic'))
 })`,
     },
@@ -268,7 +270,8 @@ wave(40, 0.28, 1.5, (i, t, x, y) => {
       name: 'Marble Tori',
       desc: 'Marble-textured tori arranged in a circle',
       code: `circular(10, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {
-  torus(x, y, 0.07, palette('Aurora', i), 0.85,
+  const s = 0.07
+  torus(x - s / 2, y - sy(s) / 2, s, palette('Aurora', i), 0.85,
     transform({ rotateX: 60, rotateY: angle * 180 / PI }), material('marble'))
 })`,
     },
@@ -277,8 +280,8 @@ wave(40, 0.28, 1.5, (i, t, x, y) => {
       desc: 'Translucent glass columns with rim lighting',
       code: `repeat(9, (i, t) => {
   const n = nz(t * 4)
-  const h = lerp(0.08, 0.22, n)
-  cylinder((i + 0.5) / 9, 0.55 - h / 2, 0.05, h,
+  const ch = lerp(0.08, 0.22, n)
+  cylinder((i + 0.5) / 9 - 0.025, 0.55 - sy(ch) / 2, 0.05, ch,
     palette('Ocean', i), 0.85,
     transform({ rotateX: 20, rotateY: 35 }), material('glass'))
 })`,
@@ -288,12 +291,12 @@ wave(40, 0.28, 1.5, (i, t, x, y) => {
       desc: 'Mixed materials and shapes scattered with noise',
       code: `const mats = ['metal', 'plastic', 'marble', 'glass']
 repeat(30, (i, t) => {
-  const x = nz(i * 1.7, 0.3)
-  const y = nz(i * 2.3, 0.7)
+  const nx = nz(i * 1.7, 0.3)
+  const ny = nz(i * 2.3, 0.7)
   const s = lerp(0.03, 0.07, nz(i * 0.5))
   const shapes = [cube, sphere, torus]
   const shape = shapes[i % 3]
-  shape(lerp(0.08, 0.92, x), lerp(0.08, 0.92, y), s,
+  shape(lerp(0.08, 0.92, nx) - s / 2, lerp(0.08, 0.92, ny) - sy(s) / 2, s,
     palette('Ember', i % 6), lerp(0.5, 0.95, t),
     transform({ rotateX: 30 + i * 7, rotateY: 45 + i * 11 }), material(mats[i % 4]))
 })`,
@@ -303,9 +306,9 @@ repeat(30, (i, t) => {
       desc: 'Repeating tile with mirrored alternation',
       code: `// tile(cols, cb) — square tiles, auto-adapted to viewport
 tile(5, (c, r, ct, rt) => {
-  rect(0.5, 0.5, 0.9, 0.9, palette('Aurora', c + r * 2), 0.7)
-  ellipse(0.25, 0.25, 0.3, 0.3, '#fff', 0.4)
-  ellipse(0.75, 0.75, 0.2, 0.2, '#000', 0.3)
+  rect(0.05, 0.05, 0.9, 0.9, palette('Aurora', c + r * 2), 0.7)
+  ellipse(0.1, 0.1, 0.3, 0.3, '#fff', 0.4)
+  ellipse(0.65, 0.65, 0.2, 0.2, '#000', 0.3)
   if ((c + r) % 2) mirror('x')
 })`,
     },
@@ -314,7 +317,7 @@ tile(5, (c, r, ct, rt) => {
       desc: 'Interlocking tile pattern with per-cell variation',
       code: `tile(6, (c, r, ct, rt) => {
   const n = nz(ct * 3, rt * 3)
-  rect(0.5, 0.5, 0.85, 0.85, palette('Ocean', c + r), lerp(0.4, 0.9, n))
+  rect(0.075, 0.075, 0.85, 0.85, palette('Ocean', c + r), lerp(0.4, 0.9, n))
   line(0, 0.5, 1, 0.5, '#fff', 0.2 + n * 0.3, 0.01)
   line(0.5, 0, 0.5, 1, '#fff', 0.2 + n * 0.3, 0.01)
   if (r % 2) mirror('y')
@@ -505,7 +508,7 @@ tile(5, (c, r, ct, rt) => {
 
   function saveSelectedAsStamp() {
     if (!activeLayer || selectedShapes.length === 0) return
-    const code = shapesToCode(normalizeToCenter(selectedShapes))
+    const code = shapesToCode(normalizeToCenter(selectedShapes), artW, artH)
     onAddPattern({
       id: '',
       name: `Stamp ${patterns.filter(p => !p.builtin).length + 1}`,
