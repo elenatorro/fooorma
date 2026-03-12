@@ -184,13 +184,16 @@ tile(14, (c, r, ct, rt) => {
       name: 'Spiral',
       desc: 'Outward spiral of circles',
       code: `repeat(120, (i, t) => {
-  const angle = t * TAU * 5
-  const r = 0.04 + t * 0.42
-  const s = 0.01 + t * 0.024
-  const px = 0.5 + cos(angle) * r
-  const py = 0.5 + sin(angle) * r * W / H
-  ellipse(px - s / 2, py - sy(s) / 2, s, s,
-    palette('Sunset', i % 6), lerp(0.3, 1, t))
+angle = t * TAU * 5
+r = 0.04 + t * 0.42
+s = 0.01 + t * 0.02
+s2 = 0.01 + t * 0.05
+px = 0.5 + cos(angle) * r
+py = 0.5 + sin(angle) * r * W / H
+ellipse(px - s2 / 2, py - sy(s2) / 2, s2, s2,
+  palette('Aurora', i % 6), 1)
+  ellipse(px- s / 2, py - sy(s) / 2, s, s,
+  '#FFFFFF', 1)
 })`,
     },
     {
@@ -205,18 +208,6 @@ circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
 })`,
     },
     {
-      name: 'Concentric',
-      desc: 'Stacked gradient rings',
-      code: `repeat(24, (i, t) => {
-  const r = lerp(0.03, 0.47, t)
-  const d = r * 2
-  const dh = d * (W / H)
-  ellipse(0.5 - r, 0.5 - sy(dh) / 2, d, dh,
-    grad(0, '#0d3460', '#4ecdc4', '#f0f7ff'),
-    lerp(0.03, 0.4, 1 - t))
-})`,
-    },
-    {
       name: 'Woven',
       desc: 'Sine waves offset per row',
       code: `repeat(10, (i, a) => {
@@ -224,7 +215,7 @@ circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
   repeat(60, (j, t) => {
     vertex(t, lerp(0.08, 0.92, a) + sin(t * TAU * 3 + i * 1.1) * 0.055)
   })
-  endSpline(palette('Neon', i), lerp(0.4, 0.85, a), 0.004)
+  endSpline(palette('Neon', i), lerp(0.4, 0.85, a), 0.04)
 })`,
     },
     {
@@ -242,48 +233,19 @@ circular(48, 0.5, 0.5, 0.34, (i, t, x, y, angle) => {
       name: 'Wave Dots',
       desc: 'Circles distributed along a sine wave',
       code: `// wave(n, amp, freq, (i, t, x, y) => ...) — x/y: center point on wave
-wave(40, 0.28, 1.5, (i, t, x, y) => {
-  const s = 0.012 + nz(t * 6) * 0.016
-  ellipse(x - s / 2, y - sy(s) / 2, s, s, palette('Ocean', i % 6), lerp(0.4, 1, t))
+wave(200, 0.28, 1.5, (i, t, x, y) => {
+  s = 0.012 + nz(t * 6) * 0.016
+  ellipse(x - s / 2, y - sy(s) / 2, s, s, palette('Ocean', i % 6), 1)
 })`,
     },
     {
-      name: 'Metal Cubes',
-      desc: 'Metallic cubes in a grid with sharp highlights',
+      name: 'Neon Cubes',
+      desc: 'Cubes in a grid with sharp highlights',
       code: `tile(5, (c, r, ct, rt) => {
-  const n = nz(ct * 3, rt * 3)
-  const sz = lerp(0.4, 0.85, n)
-  cube((1 - sz) / 2, (1 - sz) / 2, sz, palette('Neon', c + r), lerp(0.6, 1, n),
-    transform({ rotateX: 30 + n * 25, rotateY: 40 + n * 30 }), material('metal'))
-})`,
-    },
-    {
-      name: 'Plastic Spheres',
-      desc: 'Glossy plastic spheres along a wave',
-      code: `wave(18, 0.22, 1.2, (i, t, x, y) => {
-  const s = lerp(0.04, 0.08, nz(t * 5))
-  sphere(x - s / 2, y - sy(s) / 2, s, palette('Sunset', i % 6), 0.9,
-    transform({ rotateX: 25, rotateY: t * 60, smooth: 24 }), material('plastic'))
-})`,
-    },
-    {
-      name: 'Marble Tori',
-      desc: 'Marble-textured tori arranged in a circle',
-      code: `circular(10, 0.5, 0.5, 0.32, (i, t, x, y, angle) => {
-  const s = 0.07
-  torus(x - s / 2, y - sy(s) / 2, s, palette('Aurora', i), 0.85,
-    transform({ rotateX: 60, rotateY: angle * 180 / PI }), material('marble'))
-})`,
-    },
-    {
-      name: 'Glass Cylinders',
-      desc: 'Translucent glass columns with rim lighting',
-      code: `repeat(9, (i, t) => {
-  const n = nz(t * 4)
-  const ch = lerp(0.08, 0.22, n)
-  cylinder((i + 0.5) / 9 - 0.025, 0.55 - sy(ch) / 2, 0.05, ch,
-    palette('Ocean', i), 0.85,
-    transform({ rotateX: 20, rotateY: 35 }), material('glass'))
+  cube(0, 0, 1, '#f6a95c', 1,
+       rotate(random() * 100),
+       stroke('#3be623', 1, 0.01), 
+       shadow('#d24141', 4, 10, 0, 0))
 })`,
     },
     {
@@ -322,6 +284,30 @@ tile(5, (c, r, ct, rt) => {
   line(0.5, 0, 0.5, 1, '#fff', 0.2 + n * 0.3, 0.01)
   if (r % 2) mirror('y')
 }, { gapX: 0.005, gapY: 0.005 })`,
+    },
+    {
+      name: 'Masked Gradient',
+      desc: 'Diagonal gradient clipped to a circle',
+      code: `// beginMask() → draw clip shape → endMask() → draw content → endClip()
+beginMask()
+  ellipse(0.15, 0.15, 0.7, 0.7, '#fff', 1)
+endMask()
+  rect(0, 0, 1, h(1), grad(135, '#8b5cf6', '#f97316', '#4ecdc4'), 1)
+endClip()`,
+    },
+    {
+      name: 'Mask Tiles',
+      desc: 'Tiled circular windows over a striped background',
+      code: `tile(5, (c, r, ct, rt) => {
+  beginMask()
+    ellipse(0.1, 0.1, 0.8, 0.8, '#fff', 1, shadow())
+  endMask()
+    rect(0, 0, 1, 1, palette('Sunset', c + r), 1)
+    repeat(6, (i, t) => {
+      rect(0, t * 0.95, 1, 0.08, '#fff', 0.3 + nz(ct * 3 + i) * 0.3)
+    })
+  endClip()
+})`,
     },
   ]
 

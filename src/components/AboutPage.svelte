@@ -25,14 +25,14 @@
       <h2>Links</h2>
       <ul class="links-list">
         <li><!-- TODO: Website URL --></li>
-        <li><!-- TODO: GitHub URL --></li>
+        <li><a href="https://github.com/elenatorro/fooorma">https://github.com/elenatorro/fooorma</a></li>
         <li><!-- TODO: Documentation URL --></li>
       </ul>
     </section>
 
     <section class="section">
-      <h2>Credits</h2>
-      <p><!-- TODO: Add credits --></p>
+      <h2>Contact</h2>
+      <p><a href="mailto:hola@elenatorro.com">hola@elenatorro.com</a></p>
     </section>
 
     <section class="section">

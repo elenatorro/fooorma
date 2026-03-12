@@ -153,6 +153,24 @@ ellipse(0.5, 0.3, 0.1, 0.1, '#fff', 0.5)
 
 **Implementation:** `stamp()` in `evaluateQuery()` looks up the pattern by name, evaluates its code via a recursive `evaluateQuery()` call, then applies scale/rotate/mirror transforms to the resulting shapes before pushing them into the main shapes array.
 
+### Mask System
+
+`beginMask()` / `endMask()` / `endClip()` clips content shapes to the alpha of mask shapes.
+
+```js
+beginMask()
+  ellipse(0.15, 0.15, 0.7, 0.7, '#fff', 1)   // mask shape (alpha = visible)
+endMask()
+  rect(0, 0, 1, h(1), grad(45, '#8b5cf6', '#4ecdc4'), 1)  // content
+endClip()
+```
+
+**Flow:** `beginMask()` captures mask shapes → `endMask()` transitions to content → `endClip()` wraps both into a `type: 'mask'` Shape with `mask` (clip shapes) and `children` (content).
+
+**Rendering:** Uses an offscreen canvas + `destination-in` compositing. Content is rendered first, then mask shapes are composited with `destination-in` so only content within mask alpha survives. Works inside `tile()`, `stamp()`, and nested in groups.
+
+**Data model:** `Shape.mask?: Shape[]` holds clip shapes, `Shape.children?: Shape[]` holds content (same as group).
+
 ## Shape / Model Consistency Rule
 
 **Any new shape type, shape property, or model change must be reflected across all three surfaces simultaneously — no exceptions:**

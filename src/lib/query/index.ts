@@ -99,12 +99,21 @@ export function shapesToCode(shapes: Shape[], artW = 794, artH = 1123): string {
     }
   }
 
-  return shapes.map(({ type, geom, color, stroke, pts, strokeWidth, transform, effects, children }) => {
+  return shapes.map(({ type, geom, color, stroke, pts, strokeWidth, transform, effects, children, mask }) => {
     // Serialize group shapes
     if (type === 'group' && children?.length) {
       const efx = effects?.length ? effects.map(effectStr).join(', ') : ''
       const inner = shapesToCode(children, artW, artH).split('\n').map(l => '  ' + l).join('\n')
       return `beginGroup(${efx})\n${inner}\nendGroup()`
+    }
+
+    // Serialize mask shapes
+    if (type === 'mask' && mask?.length) {
+      const maskInner = shapesToCode(mask, artW, artH).split('\n').map(l => '  ' + l).join('\n')
+      const contentInner = children?.length
+        ? shapesToCode(children, artW, artH).split('\n').map(l => '  ' + l).join('\n')
+        : ''
+      return `beginMask()\n${maskInner}\nendMask()\n${contentInner}\nendClip()`
     }
 
     // Convert center-based geom to top-left for the code API
@@ -291,6 +300,39 @@ export function evaluateQuery(
       children,
     }
     shapes.push(group)
+  }
+
+  // ── Mask stack ──────────────────────────────────────────────────────────
+  // beginMask() → draw mask shape(s) → endMask() → draw content → endClip()
+  // Content is clipped to the alpha of the mask shapes.
+  interface MaskFrame { startIdx: number; maskShapes?: Shape[] }
+  const _maskStack: MaskFrame[] = []
+
+  const beginMask = (): void => {
+    _maskStack.push({ startIdx: shapes.length })
+  }
+
+  const endMask = (): void => {
+    const frame = _maskStack[_maskStack.length - 1]
+    if (!frame) return
+    frame.maskShapes = shapes.splice(frame.startIdx)
+    frame.startIdx = shapes.length
+  }
+
+  const endClip = (): void => {
+    const frame = _maskStack.pop()
+    if (!frame || !frame.maskShapes) return
+    const contentShapes = shapes.splice(frame.startIdx)
+    if (frame.maskShapes.length === 0 && contentShapes.length === 0) return
+    const maskShape: Shape = {
+      id: crypto.randomUUID(),
+      type: 'mask',
+      color: { hex: '#000000', opacity: 0 },
+      geom: { x: 0, y: 0, w: 0, h: 0 },
+      mask: frame.maskShapes,
+      children: contentShapes,
+    }
+    shapes.push(maskShape)
   }
 
   // ── Drawing primitives ────────────────────────────────────────────────────
@@ -589,9 +631,12 @@ export function evaluateQuery(
       out.transform = t
     }
 
-    // Recurse into group children
+    // Recurse into group children and mask shapes
     if (s.children) {
       out.children = s.children.map(c => remapShape(c, ox, oy, tw, th, mx, my))
+    }
+    if (s.mask) {
+      out.mask = s.mask.map(c => remapShape(c, ox, oy, tw, th, mx, my))
     }
 
     return out
@@ -763,6 +808,9 @@ export function evaluateQuery(
       if (s.children) {
         out.children = s.children.map(c => ({ ...c, id: crypto.randomUUID() }))
       }
+      if (s.mask) {
+        out.mask = s.mask.map(c => ({ ...c, id: crypto.randomUUID() }))
+      }
       shapes.push(out)
     }
   }
@@ -790,6 +838,7 @@ export function evaluateQuery(
       'rect', 'ellipse', 'arc', 'line', 'curve', 'triangle', 'spline', 'beginSpline', 'vertex', 'endSpline',
       'cube', 'sphere', 'cylinder', 'torus',
       'beginGroup', 'endGroup',
+      'beginMask', 'endMask', 'endClip',
       'stroke', 'rotate', 'transform',
       'shadow', 'blur', 'bevel', 'noise', 'warp', 'material',
       'repeat', 'grid', 'wave', 'circular', 'tile', 'mirror',
@@ -806,6 +855,7 @@ export function evaluateQuery(
       rect, ellipse, arc, line, curve, triangle, spline, beginSpline, vertex, endSpline,
       cube, sphere, cylinder, torus,
       beginGroup, endGroup,
+      beginMask, endMask, endClip,
       mkStroke, rotate, transform,
       shadow, blur, bevel, noise, warp, material,
       repeat, grid, wave, circular, tile, mirror,

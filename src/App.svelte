@@ -559,8 +559,11 @@
   })
 
   function initCanvas2D(c: HTMLCanvasElement) {
+    // Cancel any previous RAF loop (e.g. after navigating back from about page)
+    if (rafId) cancelAnimationFrame(rafId)
     canvas2d = c
     ctx2d    = c.getContext('2d')
+    warmup   = 6
     rafId    = requestAnimationFrame(loop)
     updateVP()
     fit()

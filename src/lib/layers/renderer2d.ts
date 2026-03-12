@@ -163,6 +163,7 @@ function applyWarp(
 // Offscreen canvas at physical resolution, matching main ctx transform for warp isolation.
 // Keyed by target canvas to avoid cross-contamination between viewport and export.
 const _warpPool = new WeakMap<HTMLCanvasElement, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }>()
+const _maskPool = new WeakMap<HTMLCanvasElement, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }>()
 
 function getWarpCtx(targetCanvas: HTMLCanvasElement, physW: number, physH: number): CanvasRenderingContext2D {
   let entry = _warpPool.get(targetCanvas)
@@ -179,6 +180,24 @@ function getWarpCtx(targetCanvas: HTMLCanvasElement, physW: number, physH: numbe
     entry.canvas.height = physH
     // Re-acquire context — Firefox invalidates it after dimension change
     entry.ctx = entry.canvas.getContext('2d', { willReadFrequently: true })!
+  }
+  return entry.ctx
+}
+
+function getMaskCtx(targetCanvas: HTMLCanvasElement, physW: number, physH: number): CanvasRenderingContext2D {
+  let entry = _maskPool.get(targetCanvas)
+  if (!entry) {
+    const canvas = document.createElement('canvas')
+    canvas.width = physW
+    canvas.height = physH
+    const ctx = canvas.getContext('2d')!
+    entry = { canvas, ctx }
+    _maskPool.set(targetCanvas, entry)
+  }
+  if (entry.canvas.width !== physW || entry.canvas.height !== physH) {
+    entry.canvas.width  = physW
+    entry.canvas.height = physH
+    entry.ctx = entry.canvas.getContext('2d')!
   }
   return entry.ctx
 }
@@ -681,6 +700,38 @@ export function renderLayers2D(
           shapes: flattened, query: '',
         }
         renderLayers2D(ctx, [tmpLayer], artW, artH, false)
+        continue
+      }
+
+      // ── Mask: render content clipped to mask shapes via destination-in ──
+      if (shape.type === 'mask' && shape.mask?.length && shape.children?.length) {
+        const maskCtx = getMaskCtx(ctx.canvas, physW, physH)
+        maskCtx.setTransform(1, 0, 0, 1, 0, 0)
+        maskCtx.clearRect(0, 0, physW, physH)
+        maskCtx.setTransform(ctx.getTransform())
+
+        // 1. Render content shapes onto offscreen canvas
+        const contentLayer: Layer = {
+          id: '_mask_content', name: '', visible: true, mode: 'manual',
+          shapes: shape.children, query: '',
+        }
+        renderLayers2D(maskCtx, [contentLayer], artW, artH, false)
+
+        // 2. Composite mask shapes with destination-in (alpha of mask determines what remains)
+        maskCtx.save()
+        maskCtx.globalCompositeOperation = 'destination-in'
+        const maskLayer: Layer = {
+          id: '_mask_shape', name: '', visible: true, mode: 'manual',
+          shapes: shape.mask, query: '',
+        }
+        renderLayers2D(maskCtx, [maskLayer], artW, artH, false)
+        maskCtx.restore()
+
+        // 3. Composite result onto main canvas
+        ctx.save()
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.drawImage(_maskPool.get(ctx.canvas)!.canvas, 0, 0)
+        ctx.restore()
         continue
       }
 

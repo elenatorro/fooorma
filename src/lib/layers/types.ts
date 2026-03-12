@@ -1,4 +1,4 @@
-export type ShapeType = 'rect' | 'ellipse' | 'line' | 'curve' | 'triangle' | 'arc' | 'spline' | 'group'
+export type ShapeType = 'rect' | 'ellipse' | 'line' | 'curve' | 'triangle' | 'arc' | 'spline' | 'group' | 'mask'
   | 'cube' | 'sphere' | 'cylinder' | 'torus'
 
 export interface ColorStop    { hex: string; opacity: number; pos: number }
@@ -63,7 +63,8 @@ export interface Shape {
   strokeWidth?: number   // artW-fraction; used by line and curve
   transform?: ShapeTransform
   effects?: ShapeEffect[]
-  children?: Shape[]         // only for type === 'group'
+  children?: Shape[]         // group: child shapes / mask: content shapes
+  mask?: Shape[]             // only for type === 'mask': shapes defining the clip region
 }
 
 export type PatternType = 'single' | 'row' | 'grid' | 'spiral' | 'wave' | 'circular'
