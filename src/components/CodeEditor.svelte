@@ -134,6 +134,10 @@
     snippetCompletion("beginGroup(${effect})",
       { label: 'beginGroup', detail: '...effects', type: 'function', boost: 9 }),
     { label: 'endGroup', detail: 'close group', type: 'function', boost: 9 },
+    // Mask
+    { label: 'beginMask', detail: 'start mask region', type: 'function', boost: 9 },
+    { label: 'endMask', detail: 'end mask, start content', type: 'function', boost: 9 },
+    { label: 'endClip', detail: 'close mask', type: 'function', boost: 9 },
     // Styling
     snippetCompletion("stroke('${#000000}', ${1}, ${0.005})",
       { label: 'stroke', detail: "hex, opacity?, width?, align?, join?", type: 'function', boost: 9 }),
@@ -167,6 +171,22 @@
       { label: 'wave', detail: 'n, amplitude, frequency, (i, t, x, y) => { }', type: 'function', boost: 9 }),
     snippetCompletion("circular(${12}, ${0.5}, ${0.5}, ${0.35}, (i, t, x, y, angle) => {\n  ${}\n})",
       { label: 'circular', detail: 'n, cx, cy, r, (i, t, x, y, angle) => { }', type: 'function', boost: 9 }),
+    snippetCompletion("tile(${5}, (c, r, ct, rt) => {\n  ${}\n})",
+      { label: 'tile', detail: 'cols, rows?, (c, r, ct, rt) => { }, opts?', type: 'function', boost: 9 }),
+    snippetCompletion("mirror('${x}')",
+      { label: 'mirror', detail: "'x' | 'y' | 'xy' (inside tile)", type: 'function', boost: 8 }),
+    snippetCompletion("stamp('${name}')",
+      { label: 'stamp', detail: 'name, opts?', type: 'function', boost: 8 }),
+    // Palette
+    snippetCompletion("palette('${name}', ${0})",
+      { label: 'palette', detail: 'name, index? → color hex or array', type: 'function', boost: 7 }),
+    // Dimension helpers
+    snippetCompletion("w(${v})",
+      { label: 'w', detail: 'size as fraction of width', type: 'function', boost: 6 }),
+    snippetCompletion("h(${v})",
+      { label: 'h', detail: 'size as fraction of height', type: 'function', boost: 6 }),
+    snippetCompletion("sy(${v})",
+      { label: 'sy', detail: 'size → y-position offset', type: 'function', boost: 6 }),
     // Math helpers
     snippetCompletion("lerp(${a}, ${b}, ${t})",
       { label: 'lerp', detail: 'a, b, t', type: 'function', boost: 5 }),
