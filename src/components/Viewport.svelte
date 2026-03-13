@@ -153,14 +153,16 @@
   }
 
   function onPointerDown(e: PointerEvent) {
-    if (spaceHeld) {
-      // Pan mode (Space+drag)
+    if (spaceHeld || e.button === 1) {
+      // Pan mode (Space+drag or middle-click)
       e.preventDefault()
       dragging   = true
       dragOrigin = { x: e.clientX, y: e.clientY, panX, panY }
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
       return
     }
+
+    if (dragging) return
 
     {
       const rect = artboardHost.getBoundingClientRect()
