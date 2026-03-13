@@ -153,7 +153,7 @@
   }
 
   function onPointerDown(e: PointerEvent) {
-    if (spaceHeld || e.button === 1) {
+    if (spaceHeld) {
       // Pan mode (Space+drag or middle-mouse drag)
       e.preventDefault()
       dragging   = true
@@ -440,6 +440,15 @@
     requestAnimationFrame(() => drawRulers())
   })
 
+  /** Handle middle-click pan via mousedown (Chrome 144 bug: pointerdown reports button 0 for middle-click) */
+  function onMiddleDown(e: MouseEvent) {
+    if (e.button === 1) {
+      e.preventDefault()
+      dragging   = true
+      dragOrigin = { x: e.clientX, y: e.clientY, panX, panY }
+    }
+  }
+
   onMount(() => {
     onCanvas2d(canvas2dEl)
     // Double-RAF ensures CSS custom properties and layout are fully settled
@@ -483,9 +492,12 @@
   class="viewport"
   bind:this={viewportEl}
   onwheel={onWheel}
+  onmousedown={onMiddleDown}
+  onauxclick={(e) => e.preventDefault()}
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}
+  onmouseup={(e) => { if (e.button === 1) onPointerUp() }}
   style:cursor
 >
   <div
@@ -518,6 +530,7 @@
     bottom: calc(36px + var(--code-panel-h, 0px));
     background: var(--viewport-bg);
     overflow: hidden;
+    overscroll-behavior: none;
     /* subtle grid to show the void */
     background-image:
       linear-gradient(var(--viewport-grid) 1px, transparent 1px),
