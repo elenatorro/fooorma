@@ -28,6 +28,14 @@ export function shapesToCode(shapes: Shape[], artW = 794, artH = 1123): string {
   }
 
   function strokeStr(sk: ShapeStroke): string {
+    if (sk.wireframe) {
+      const colorArg = sk.gradient ? gradStr(sk.gradient) : `'${sk.hex}'`
+      const opArg = sk.gradient ? '1' : String(f(sk.opacity))
+      const join = sk.join ?? 'round'
+      let s = `wireframe(${colorArg}, ${opArg}, ${f(sk.width)}`
+      if (join !== 'round') s += `, '${join}'`
+      return s + ')'
+    }
     const align = sk.align ?? 'center'
     const join  = sk.join  ?? 'miter'
     const colorArg = sk.gradient ? gradStr(sk.gradient) : `'${sk.hex}'`
@@ -252,6 +260,18 @@ export function evaluateQuery(
       return { hex: colorArg, opacity: Math.max(0, Math.min(1, opacity)), width, align, join }
     }
     return { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, width, align, join, gradient: colorArg }
+  }
+
+  function mkWireframe(
+    colorArg: ColorArg = '#000000',
+    opacity = 1,
+    width   = 0.003,
+    join:  'miter'  | 'round' | 'bevel' = 'round',
+  ): ShapeStroke {
+    if (typeof colorArg === 'string') {
+      return { hex: colorArg, opacity: Math.max(0, Math.min(1, opacity)), width, align: 'center', join, wireframe: true }
+    }
+    return { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, width, align: 'center', join, wireframe: true, gradient: colorArg }
   }
 
   // ── Effect factories ──────────────────────────────────────────────────────
@@ -839,7 +859,7 @@ export function evaluateQuery(
       'cube', 'sphere', 'cylinder', 'torus',
       'beginGroup', 'endGroup',
       'beginMask', 'endMask', 'endClip',
-      'stroke', 'rotate', 'transform',
+      'stroke', 'wireframe', 'rotate', 'transform',
       'shadow', 'blur', 'bevel', 'noise', 'warp', 'material',
       'repeat', 'grid', 'wave', 'circular', 'tile', 'mirror',
       'stamp',
@@ -856,7 +876,7 @@ export function evaluateQuery(
       cube, sphere, cylinder, torus,
       beginGroup, endGroup,
       beginMask, endMask, endClip,
-      mkStroke, rotate, transform,
+      mkStroke, mkWireframe, rotate, transform,
       shadow, blur, bevel, noise, warp, material,
       repeat, grid, wave, circular, tile, mirror,
       stamp,

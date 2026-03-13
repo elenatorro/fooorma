@@ -13,6 +13,7 @@ export interface ShapeStroke {
   width: number                              // artW-fraction
   align?: 'center' | 'inner' | 'outer'
   join?:  'miter'  | 'round' | 'bevel'
+  wireframe?: boolean                        // 3D only: edges only, no filled faces
   gradient?: Gradient
 }
 

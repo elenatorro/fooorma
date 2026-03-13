@@ -154,7 +154,7 @@
 
   function onPointerDown(e: PointerEvent) {
     if (spaceHeld) {
-      // Pan mode (Space+drag or middle-mouse drag)
+      // Pan mode (Space+drag)
       e.preventDefault()
       dragging   = true
       dragOrigin = { x: e.clientX, y: e.clientY, panX, panY }
@@ -493,7 +493,6 @@
   bind:this={viewportEl}
   onwheel={onWheel}
   onmousedown={onMiddleDown}
-  onauxclick={(e) => e.preventDefault()}
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}
@@ -530,7 +529,6 @@
     bottom: calc(36px + var(--code-panel-h, 0px));
     background: var(--viewport-bg);
     overflow: hidden;
-    overscroll-behavior: none;
     /* subtle grid to show the void */
     background-image:
       linear-gradient(var(--viewport-grid) 1px, transparent 1px),

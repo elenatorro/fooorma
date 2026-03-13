@@ -22,6 +22,7 @@ export const API_SNIPPETS: ApiSnippet[] = [
   { name: 'endClip',    sig: '—',                                                code: "endClip()" },
   { name: 'nz',         sig: 'x, y? → 0..1',                                       code: "beginSpline()\nrepeat(20, (i, t) => {\n  vertex(t, 0.3 + nz(t * 4) * 0.4)\n})\nendSpline('#8b5cf6', 0.85)" },
   { name: 'stroke',     sig: 'hex, opacity?, width?, align?, join?',                 code: "stroke('#000000', 1, 0.005)" },
+  { name: 'wireframe',  sig: 'hex?, opacity?, width?, join?',                        code: "// 3D wireframe: edges only, no filled faces\ncube(0.35, 0.35, 0.3, '#8b5cf6', 0.85, wireframe('#000', 1, 0.003, 'round'))" },
   { name: 'rotate',     sig: 'deg',                                                  code: "rotate(45)" },
   { name: 'transform',  sig: '{ rotate?, scaleX?, scaleY?, skewX?, skewY?, rotateX?, rotateY?, rotateZ?, depth?, smooth? }', code: "transform({ rotate: 45, scaleX: 1.2 })" },
   { name: 'material',   sig: "kind, roughness?, intensity?",                            code: "material('metal', 0.3, 0.7)" },

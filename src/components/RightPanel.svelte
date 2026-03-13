@@ -907,6 +907,18 @@ endClip()`,
                 {/each}
               </div>
             </div>
+            {#if is3DStroke}
+              <div class="prop-row">
+                <label class="prop-label">Wireframe</label>
+                <div class="color-control">
+                  <input
+                    type="checkbox"
+                    checked={!!sk.wireframe}
+                    onchange={(e) => forAll(s => s.stroke ? { stroke: { ...s.stroke, wireframe: (e.target as HTMLInputElement).checked } } : {})}
+                  />
+                </div>
+              </div>
+            {/if}
           {/if}
         {/if}
 

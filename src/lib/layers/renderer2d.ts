@@ -397,7 +397,21 @@ function drawFaces(
 ) {
   faces.sort((a, b) => b.depth - a.depth)
 
-  // Draw each face with a matching stroke to hide seams between adjacent polygons
+  // Pre-compute stroke settings once
+  let strokeLw = 0, strokeJoin: CanvasLineJoin = 'miter'
+  let strokeStyle: string | CanvasGradient = ''
+  let strokeAlpha = 1
+  if (shapeStroke) {
+    const shapeSize = Math.max(bw, bh) || (artW || 1)
+    strokeLw = shapeStroke.width * shapeSize
+    strokeJoin = shapeStroke.join ?? 'miter'
+    strokeStyle = shapeStroke.gradient
+      ? makeGradient(dc, shapeStroke.gradient, bx, by, bw, bh)
+      : shapeStroke.hex
+    strokeAlpha = shapeStroke.gradient ? 1 : shapeStroke.opacity
+  }
+
+  // Draw back-to-front: each face's fill naturally occludes back-face edges
   for (const face of faces) {
     dc.beginPath()
     dc.moveTo(face.verts[0][0], face.verts[0][1])
@@ -416,39 +430,29 @@ function drawFaces(
       fillStyle = addSpecular(shadeHex(hex, shade), specular)
     }
 
-    dc.globalAlpha = opacity * alpha
-    dc.fillStyle = fillStyle
-    dc.fill()
-    if (!shapeStroke) {
-      // Stroke each face with its own fill color to eliminate seam lines
-      dc.strokeStyle = fillStyle
-      dc.lineWidth = material === 'glass' ? 0.25 : 0.5
-      dc.lineJoin = 'round'
-      if (material === 'glass') dc.globalAlpha = opacity * alpha * 0.5
-      dc.stroke()
+    // Fill face (skip in wireframe mode)
+    if (!shapeStroke?.wireframe) {
+      dc.globalAlpha = opacity * alpha
+      dc.fillStyle = fillStyle
+      dc.fill()
+      if (!shapeStroke) {
+        // Stroke each face with its own fill color to eliminate seam lines
+        dc.strokeStyle = fillStyle
+        dc.lineWidth = material === 'glass' ? 0.25 : 0.5
+        dc.lineJoin = 'round'
+        if (material === 'glass') dc.globalAlpha = opacity * alpha * 0.5
+        dc.stroke()
+      }
     }
-  }
 
-  // Wireframe stroke: draw edges of each visible face
-  // Scale relative to the shape's projected size, not the full artboard
-  if (shapeStroke) {
-    const shapeSize = Math.max(bw, bh) || (artW || 1)
-    const lw = shapeStroke.width * shapeSize
-    dc.lineWidth = lw
-    dc.lineJoin = shapeStroke.join ?? 'miter'
-    dc.lineCap = 'round'
-    if (shapeStroke.gradient) {
-      dc.strokeStyle = makeGradient(dc, shapeStroke.gradient, bx, by, bw, bh)
-      dc.globalAlpha = 1
-    } else {
-      dc.strokeStyle = shapeStroke.hex
-      dc.globalAlpha = shapeStroke.opacity
-    }
-    for (const face of faces) {
-      dc.beginPath()
-      dc.moveTo(face.verts[0][0], face.verts[0][1])
-      for (let i = 1; i < face.verts.length; i++) dc.lineTo(face.verts[i][0], face.verts[i][1])
-      dc.closePath()
+    // Edge stroke per face — drawn right after the fill so the next face's
+    // fill will cover any edges that should be hidden behind it
+    if (shapeStroke) {
+      dc.lineWidth = strokeLw
+      dc.lineJoin = strokeJoin
+      dc.lineCap = 'round'
+      dc.strokeStyle = strokeStyle
+      dc.globalAlpha = strokeAlpha
       dc.stroke()
     }
   }
