@@ -63,6 +63,16 @@ pnpm build
 pnpm tauri:build
 ```
 
+## Beta Testing
+
+fooorma is currently in beta. If you'd like to help test it, we'd love your feedback!
+
+- **Report bugs** or **request features** via [GitHub Issues](https://github.com/elenatorro/fooorma/issues)
+- **General feedback and questions** via [GitHub Discussions](https://github.com/elenatorro/fooorma/discussions)
+- **Reach out directly** at [hola@elenatorro.com](mailto:hola@elenatorro.com)
+
+Any feedback is welcome — whether it's about bugs, missing features, usability, or ideas for new shapes and effects.
+
 ## Links
 
 - **Repository**: https://github.com/elenatorro/fooorma
