@@ -783,13 +783,13 @@
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `fooorma-${Date.now()}@${s}x.tiff`
+      a.download = `${projectName || 'project'}@${s}x.tiff`
       a.click()
       URL.revokeObjectURL(url)
     } else {
       const a = document.createElement('a')
       a.href     = canvas.toDataURL('image/png')
-      a.download = `fooorma-${Date.now()}@${s}x.png`
+      a.download = `${projectName || 'project'}@${s}x.png`
       a.click()
     }
   }

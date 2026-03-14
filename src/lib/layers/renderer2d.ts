@@ -748,6 +748,10 @@ export function renderLayers2D(
       const left = px - pw / 2
       const top  = py - ph / 2
 
+      // Sub-pixel bloat: expand filled rects by a tiny amount to eliminate
+      // hairline seams between adjacent tiles caused by floating-point rounding.
+      const BLOAT = 0.5  // half an artboard pixel — invisible but closes gaps
+
       // ── 3D shapes: isometric projection ──
       if (SHAPE_3D_TYPES.has(type)) {
         const shadowFx   = effects?.find((e: ShapeEffect) => e.type === 'shadow')
@@ -813,10 +817,11 @@ export function renderLayers2D(
       }
 
       // Build a (re-usable) path for filled shapes — uses dc
-      function buildShapePath() {
+      // bloat: expand rect slightly to eliminate sub-pixel seams between adjacent tiles
+      function buildShapePath(bloat = 0) {
         dc.beginPath()
         if (type === 'rect') {
-          dc.rect(left, top, pw, ph)
+          dc.rect(left - bloat, top - bloat, pw + bloat * 2, ph + bloat * 2)
         } else if (type === 'ellipse') {
           dc.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2)
         } else if (type === 'arc') {
@@ -916,7 +921,7 @@ export function renderLayers2D(
         dc.globalAlpha = color.opacity
         dc.fillStyle   = color.hex
       }
-      buildShapePath()
+      buildShapePath(BLOAT)
       dc.fill()
 
       // Stroke
