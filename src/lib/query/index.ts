@@ -293,6 +293,32 @@ export function evaluateQuery(
   const material = (kind: import('../layers/types').Material3D = 'default', roughness = 0.5, intensity = 0.5): ShapeEffect =>
     ({ type: 'material', material: kind, roughness, intensity })
 
+  /** Compute bounding-box geom (center-based) from a list of child shapes. */
+  function childrenBbox(list: Shape[]): { x: number; y: number; w: number; h: number } {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    for (const s of list) {
+      if ((s.type === 'group' || s.type === 'mask') && (s.children?.length || s.mask?.length)) {
+        const inner = childrenBbox([...(s.children ?? []), ...(s.mask ?? [])])
+        const hw = inner.w / 2, hh = inner.h / 2
+        if (inner.x - hw < minX) minX = inner.x - hw; if (inner.x + hw > maxX) maxX = inner.x + hw
+        if (inner.y - hh < minY) minY = inner.y - hh; if (inner.y + hh > maxY) maxY = inner.y + hh
+        continue
+      }
+      if (s.pts && s.type !== 'arc') {
+        for (let i = 0; i < s.pts.length; i += 2) {
+          if (s.pts[i] < minX) minX = s.pts[i]; if (s.pts[i] > maxX) maxX = s.pts[i]
+          if (s.pts[i+1] < minY) minY = s.pts[i+1]; if (s.pts[i+1] > maxY) maxY = s.pts[i+1]
+        }
+      } else {
+        const hw = s.geom.w / 2, hh = s.geom.h / 2
+        if (s.geom.x - hw < minX) minX = s.geom.x - hw; if (s.geom.x + hw > maxX) maxX = s.geom.x + hw
+        if (s.geom.y - hh < minY) minY = s.geom.y - hh; if (s.geom.y + hh > maxY) maxY = s.geom.y + hh
+      }
+    }
+    if (!isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 }
+    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2, w: maxX - minX, h: maxY - minY }
+  }
+
   // ── Group stack ─────────────────────────────────────────────────────────
   // beginGroup(...effects) captures all shapes created until endGroup()
   // and wraps them in a single 'group' shape with those effects applied
@@ -315,7 +341,7 @@ export function evaluateQuery(
       id: crypto.randomUUID(),
       type: 'group',
       color: { hex: '#000000', opacity: 0 },
-      geom: { x: 0, y: 0, w: 0, h: 0 },
+      geom: childrenBbox(children),
       effects: frame.effects,
       children,
     }
@@ -348,7 +374,7 @@ export function evaluateQuery(
       id: crypto.randomUUID(),
       type: 'mask',
       color: { hex: '#000000', opacity: 0 },
-      geom: { x: 0, y: 0, w: 0, h: 0 },
+      geom: childrenBbox([...frame.maskShapes, ...contentShapes]),
       mask: frame.maskShapes,
       children: contentShapes,
     }

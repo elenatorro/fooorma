@@ -3,6 +3,7 @@ import type { Palette } from '../palettes/index'
 import { shapesToCode } from '../query/index'
 
 export interface ProjectData {
+  projectName?: string
   layers: Layer[]
   artW: number
   artH: number
@@ -12,8 +13,10 @@ export interface ProjectData {
 
 // ── Serialize ──────────────────────────────────────────────────────────────
 
-export function serializeProject({ layers, artW, artH, customPalettes = [], customPatterns = [] }: ProjectData): string {
-  const out: string[] = ['// fooorma v1', `// Artboard: ${artW} × ${artH}`, '']
+export function serializeProject({ projectName, layers, artW, artH, customPalettes = [], customPatterns = [] }: ProjectData): string {
+  const out: string[] = ['// fooorma v1']
+  if (projectName) out.push(`// Project: ${projectName}`)
+  out.push(`// Artboard: ${artW} × ${artH}`, '')
 
   for (const p of customPalettes) {
     out.push(`// @palette "${p.name}" ${p.colors.join(' ')}`)
@@ -56,6 +59,7 @@ export function serializeProject({ layers, artW, artH, customPalettes = [], cust
 
 export function parseProject(content: string): ProjectData {
   const lines = content.split('\n')
+  let projectName: string | undefined
   let artW = 794
   let artH = 1123
 
@@ -92,6 +96,12 @@ export function parseProject(content: string): ProjectData {
     }
 
     if (line.startsWith('// fooorma v') || line.startsWith('// forma v')) continue
+
+    const projectMatch = line.match(/^\/\/ Project: (.+)$/)
+    if (projectMatch) {
+      projectName = projectMatch[1]
+      continue
+    }
 
     // Artboard dimensions — handle both × (U+00D7) and x
     const artMatch = line.match(/^\/\/ Artboard: (\d+) [×x] (\d+)/)
@@ -172,5 +182,5 @@ export function parseProject(content: string): ProjectData {
     layers.push({ id: crypto.randomUUID(), name: 'Layer 1', visible: true, mode: 'code', shapes: [], query: '' })
   }
 
-  return { layers, artW, artH, customPalettes, customPatterns }
+  return { projectName, layers, artW, artH, customPalettes, customPatterns }
 }

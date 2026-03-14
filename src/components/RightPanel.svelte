@@ -72,6 +72,22 @@
     onDeletePattern: (id: string) => void
   } = $props()
 
+  /** Simple syntax highlight for stamp code previews — reuses CodeMirror CSS vars */
+  function highlightCode(code: string): string {
+    return code.replace(
+      /\/\/.*|'[^']*'|"[^"]*"|`[^`]*`|\b(\d+\.?\d*)\b|\b(true|false|null|undefined|const|let|var|if|else|for|while|return|function)\b|([a-zA-Z_$]\w*)\s*(?=\()/g,
+      (m, num, kw, fn) => {
+        if (m.startsWith('//'))  return `<span style="color:var(--cm-comment);font-style:italic">${m}</span>`
+        if (m.startsWith("'") || m.startsWith('"') || m.startsWith('`'))
+          return `<span style="color:var(--cm-string)">${m}</span>`
+        if (num !== undefined)   return `<span style="color:var(--cm-number)">${m}</span>`
+        if (kw !== undefined)    return `<span style="color:var(--cm-keyword)">${m}</span>`
+        if (fn !== undefined)    return `<span style="color:var(--cm-function)">${fn}</span>${m.slice(fn.length)}`
+        return m
+      }
+    )
+  }
+
   const activeLayer  = $derived(layers.find(l => l.id === activeLayerId) ?? null)
   const activeShape  = $derived(activeLayer?.shapes.find(s => s.id === activeShapeId) ?? null)
   const isCodeMode   = $derived(activeLayer?.mode === 'code')
@@ -662,7 +678,7 @@ endClip()`,
         {/each}
       </div>
 
-      <button class="add-layer-btn" onclick={onAddLayer}>+ Add layer</button>
+      <button class="add-layer-btn" onclick={() => onAddLayer()}>+ Add layer</button>
     </section>
 
     <!-- Layer background color (shown when a layer is selected) -->
@@ -797,9 +813,9 @@ endClip()`,
               class:selected={!isCodeMode && selectedShapeIds.includes(shape.id)}
               onclick={() => { if (!isCodeMode) onSelectShape(shape.id) }}
             >
-              <span class="shape-type-badge">{ ({rect:'▭',ellipse:'◯',arc:'◜',line:'╱',curve:'∿',triangle:'△',spline:'〜',cube:'⬡',sphere:'●',cylinder:'⏣',torus:'◎'} as Record<string,string>)[shape.type] }</span>
+              <span class="shape-type-badge">{ ({rect:'▭',ellipse:'◯',arc:'◜',line:'╱',curve:'∿',triangle:'△',spline:'〜',cube:'⬡',sphere:'●',cylinder:'⏣',torus:'◎',group:'▦',mask:'◩'} as Record<string,string>)[shape.type] }</span>
               <span class="shape-auto-name">
-                { ({rect:'Rect',ellipse:'Ellipse',arc:'Arc',line:'Line',curve:'Curve',triangle:'Triangle',spline:'Spline',cube:'Cube',sphere:'Sphere',cylinder:'Cylinder',torus:'Torus'} as Record<string,string>)[shape.type] } {i + 1}
+                { ({rect:'Rect',ellipse:'Ellipse',arc:'Arc',line:'Line',curve:'Curve',triangle:'Triangle',spline:'Spline',cube:'Cube',sphere:'Sphere',cylinder:'Cylinder',torus:'Torus',group:'Group',mask:'Mask'} as Record<string,string>)[shape.type] } {i + 1}
               </span>
               {#if !isCodeMode}
                 <button
@@ -1359,7 +1375,7 @@ endClip()`,
                   class="stamp-code-preview"
                   title="Click to edit"
                   onclick={() => { editingStampCode = pattern.id; editingStampCodeValue = pattern.code ?? '' }}
-                >{pattern.code}</pre>
+                >{@html highlightCode(pattern.code ?? '')}</pre>
               {/if}
               <div class="pattern-card-actions">
                 <button class="sample-load-btn" onclick={() => loadPattern(pattern)}>Insert</button>

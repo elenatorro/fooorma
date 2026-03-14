@@ -78,7 +78,7 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) return null
-      const data = JSON.parse(raw) as { layers: Layer[]; artW: number; artH: number; customPalettes: Palette[]; customPatterns?: Pattern[]; activeIdx: number }
+      const data = JSON.parse(raw) as { projectName?: string; layers: Layer[]; artW: number; artH: number; customPalettes: Palette[]; customPatterns?: Pattern[]; activeIdx: number }
       if (!Array.isArray(data.layers)) return null
       return data
     } catch {
@@ -87,6 +87,9 @@
   }
 
   const _saved = loadAutosave()
+
+  // ── Project name ──────────────────────────────────────────────────────────
+  let projectName = $state(_saved?.projectName ?? 'Project')
 
   // ── Artboard ──────────────────────────────────────────────────────────────
   let artW = $state(_saved?.artW ?? 794)
@@ -233,7 +236,7 @@
   let _saveTimer: ReturnType<typeof setTimeout> | undefined
   $effect(() => {
     const idx  = layers.findIndex(l => l.id === activeLayerId)
-    const data = JSON.stringify({ layers, artW, artH, customPalettes, customPatterns, activeIdx: idx < 0 ? layers.length - 1 : idx })
+    const data = JSON.stringify({ projectName, layers, artW, artH, customPalettes, customPatterns, activeIdx: idx < 0 ? layers.length - 1 : idx })
     clearTimeout(_saveTimer)
     _saveTimer = setTimeout(() => {
       try { localStorage.setItem(STORAGE_KEY, data) } catch { /* storage full or unavailable */ }
@@ -483,12 +486,32 @@
     } : l)
   }
 
+  function shiftShapeChildren(s: Shape, dx: number, dy: number): Shape {
+    const out = { ...s }
+    out.geom = { ...s.geom, x: s.geom.x + dx, y: s.geom.y + dy }
+    if (s.pts && s.type !== 'arc') {
+      out.pts = s.pts.map((v, i) => i % 2 === 0 ? v + dx : v + dy)
+    }
+    if (s.children) out.children = s.children.map(c => shiftShapeChildren(c, dx, dy))
+    if (s.mask) out.mask = s.mask.map(c => shiftShapeChildren(c, dx, dy))
+    return out
+  }
+
   function handleUpdateGeom(layerId: string, shapeId: string, geom: ShapeGeom) {
     const key = `${layerId}:${shapeId}`
     if (key !== _lastGeomCommitKey) { commit(); _lastGeomCommitKey = key }
     layers = layers.map(l => l.id === layerId ? {
       ...l,
-      shapes: l.shapes.map(s => s.id === shapeId ? { ...s, geom } : s),
+      shapes: l.shapes.map(s => {
+        if (s.id !== shapeId) return s
+        // For mask/group: shift all nested children by the delta
+        if (s.type === 'mask' || s.type === 'group') {
+          const dx = geom.x - s.geom.x
+          const dy = geom.y - s.geom.y
+          return shiftShapeChildren(s, dx, dy)
+        }
+        return { ...s, geom }
+      }),
     } : l)
   }
 
@@ -695,6 +718,7 @@
   // ── New ────────────────────────────────────────────────────────────────────
   function handleNew() {
     const id = crypto.randomUUID()
+    projectName   = 'Project'
     layers        = [{ id, name: 'Layer 1', visible: true, bgColor: '#ffffff', mode: 'manual', shapes: [], query: '' }]
     activeLayerId = id
     activeShapeId = null
@@ -704,12 +728,12 @@
 
   // ── Save / Load ────────────────────────────────────────────────────────────
   function handleSave() {
-    const content = serializeProject({ layers, artW, artH, customPalettes, customPatterns })
+    const content = serializeProject({ projectName, layers, artW, artH, customPalettes, customPatterns })
     const blob = new Blob([content], { type: 'text/plain' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
     a.href     = url
-    a.download = 'project.ooo'
+    a.download = `${projectName || 'project'}.ooo`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -717,7 +741,8 @@
   async function handleLoad(file: File) {
     const content = await file.text()
     try {
-      const { layers: newLayers, artW: newW, artH: newH, customPalettes: newPalettes, customPatterns: newPatterns } = parseProject(content)
+      const { projectName: loadedName, layers: newLayers, artW: newW, artH: newH, customPalettes: newPalettes, customPatterns: newPatterns } = parseProject(content)
+      projectName     = loadedName ?? file.name.replace(/\.(ooo|forma|txt)$/i, '')
       layers          = newLayers
       customPalettes  = newPalettes ?? []
       customPatterns  = newPatterns ?? []
@@ -948,6 +973,8 @@
   {exportFormat}
   onSetExportScale={(s) => exportScale = s}
   onSetExportFormat={(f) => exportFormat = f}
+  {projectName}
+  onRename={(name) => projectName = name}
   onNew={handleNew}
   onSave={handleSave}
   onLoad={handleLoad}

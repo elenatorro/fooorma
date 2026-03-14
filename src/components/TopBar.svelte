@@ -5,12 +5,14 @@
     artW,
     artH,
     theme,
+    projectName,
     onSizeChange,
     onExport,
     exportScale,
     exportFormat,
     onSetExportScale,
     onSetExportFormat,
+    onRename,
     onSave,
     onLoad,
     onNew,
@@ -20,18 +22,21 @@
     artW: number
     artH: number
     theme: 'dark' | 'light'
+    projectName: string
     onSizeChange: (w: number, h: number) => void
     onExport: () => void
     exportScale: number
     exportFormat: 'png' | 'cmyk-tiff'
     onSetExportScale: (s: number) => void
     onSetExportFormat: (f: 'png' | 'cmyk-tiff') => void
+    onRename: (name: string) => void
     onSave: () => void
     onLoad: (file: File) => void
     onNew: () => void
     onToggleTheme: () => void
     onAbout: () => void
   } = $props()
+
 
   // ── File open ──────────────────────────────────────────────────────────────
   let fileInput: HTMLInputElement
@@ -164,7 +169,16 @@
 
   <!-- File controls -->
   <div class="file-controls">
-    <button class="file-btn" onclick={onNew} title="New blank canvas">New</button>
+    <input
+      class="project-name-input"
+      type="text"
+      value={projectName}
+      oninput={(e) => onRename((e.target as HTMLInputElement).value)}
+      onblur={(e) => { if (!(e.target as HTMLInputElement).value.trim()) onRename('Project') }}
+      onkeydown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      title="Project name"
+    />
+    <button class="file-btn" onclick={() => onNew()} title="New blank canvas">New</button>
     <button class="file-btn" onclick={openFilePicker} title="Open .ooo file">Open</button>
     <button class="file-btn" onclick={onSave} title="Save project as .ooo">Save</button>
     <button class="file-btn theme-btn" onclick={onToggleTheme} title="Toggle light/dark theme">{theme === 'dark' ? '◑' : '◐'}</button>
@@ -514,4 +528,20 @@
     flex-shrink: 0;
   }
   .info-btn:hover { background: var(--bg-hover); color: var(--text-3); }
+
+  /* ── Project name ── */
+  .project-name-input {
+    font-size: 12px;
+    color: var(--text-2);
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 8px;
+    height: 28px;
+    width: 120px;
+    outline: none;
+    font-family: inherit;
+    transition: border-color .12s;
+  }
+  .project-name-input:focus { border-color: var(--accent); color: var(--text-1); }
 </style>

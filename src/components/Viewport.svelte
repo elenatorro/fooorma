@@ -94,6 +94,11 @@
   function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)) }
 
   function shapeHit(s: Shape, px: number, py: number, PAD: number): boolean {
+    // Groups and masks: test against children (and mask shapes for masks)
+    if (s.type === 'group' || s.type === 'mask') {
+      const all = [...(s.children ?? []), ...(s.mask ?? [])]
+      return all.some(c => shapeHit(c, px, py, PAD))
+    }
     if (s.pts && s.type !== 'arc') {
       const xs = s.pts.filter((_, j) => j % 2 === 0).map(v => v * artW)
       const ys = s.pts.filter((_, j) => j % 2 === 1).map(v => v * artH)
