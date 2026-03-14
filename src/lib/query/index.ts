@@ -170,7 +170,6 @@ export interface QueryResult {
   errors: string[]
 }
 
-const MAX_SHAPES = 5_000
 
 export function evaluateQuery(
   code: string,
@@ -397,7 +396,7 @@ export function evaluateQuery(
     effects: ShapeEffect[] = [],
     xform?: ShapeTransform,
   ): void {
-    if (shapes.length >= MAX_SHAPES) return
+
     const shapeColor = typeof colorArg === 'string'
       ? { hex: colorArg, opacity: Math.max(0, Math.min(1, opacity)) }
       : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
@@ -429,7 +428,7 @@ export function evaluateQuery(
     xform?: ShapeTransform,
     effects: ShapeEffect[] = [],
   ): void {
-    if (shapes.length >= MAX_SHAPES) return
+
     const shapeColor = typeof colorArg === 'string'
       ? { hex: colorArg, opacity: Math.max(0, Math.min(1, opacity)) }
       : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
@@ -444,7 +443,7 @@ export function evaluateQuery(
   }
 
   const arc = (x: number, y: number, r: number, startAngle: number, endAngle: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
-    if (shapes.length >= MAX_SHAPES) return
+
     const { stroke, transform: xform, effects } = collectTrailing(trailing)
     const shapeColor = typeof colorArg === 'string' || colorArg === undefined
       ? { hex: colorArg ?? '#8b5cf6', opacity: Math.max(0, Math.min(1, opacity ?? 0.85)) }
@@ -481,7 +480,7 @@ export function evaluateQuery(
   }
 
   const triangle = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, colorArg?: ColorArg, opacity?: number, ...trailing: unknown[]) => {
-    if (shapes.length >= MAX_SHAPES) return
+
     const shapeColor = typeof colorArg === 'string' || colorArg === undefined
       ? { hex: colorArg ?? '#8b5cf6', opacity: Math.max(0, Math.min(1, opacity ?? 0.85)) }
       : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
@@ -556,9 +555,9 @@ export function evaluateQuery(
 
   // ── Loop helpers ──────────────────────────────────────────────────────────
   const repeat = (n: number, cb: (i: number, t: number) => void): void => {
-    const count = Math.min(Math.floor(n), MAX_SHAPES)
+    const count = Math.floor(n)
     for (let i = 0; i < count; i++) {
-      if (shapes.length >= MAX_SHAPES) break
+
       cb(i, count > 1 ? i / (count - 1) : 0)
     }
   }
@@ -568,7 +567,7 @@ export function evaluateQuery(
     const nr = Math.min(Math.floor(rows), 200)
     for (let r = 0; r < nr; r++) {
       for (let c = 0; c < nc; c++) {
-        if (shapes.length >= MAX_SHAPES) break
+  
         cb(c, r, nc > 1 ? c / (nc - 1) : 0, nr > 1 ? r / (nr - 1) : 0)
       }
     }
@@ -583,9 +582,9 @@ export function evaluateQuery(
     frequency = 1,
     cb: (i: number, t: number, x: number, y: number) => void,
   ): void => {
-    const count = Math.min(Math.floor(n), MAX_SHAPES)
+    const count = Math.floor(n)
     for (let i = 0; i < count; i++) {
-      if (shapes.length >= MAX_SHAPES) break
+
       const t = count > 1 ? i / (count - 1) : 0
       const x = t
       const y = 0.5 + amplitude * Math.sin(frequency * t * Math.PI * 2)
@@ -603,10 +602,10 @@ export function evaluateQuery(
     r = 0.35,
     cb: (i: number, t: number, x: number, y: number, angle: number) => void,
   ): void => {
-    const count = Math.min(Math.floor(n), MAX_SHAPES)
+    const count = Math.floor(n)
     const aspect = artW / artH
     for (let i = 0; i < count; i++) {
-      if (shapes.length >= MAX_SHAPES) break
+
       const t     = count > 1 ? i / count : 0
       const angle = t * Math.PI * 2
       const x     = cx + r * Math.cos(angle)
@@ -720,7 +719,7 @@ export function evaluateQuery(
 
     for (let r = 0; r < nr; r++) {
       for (let c = 0; c < nc; c++) {
-        if (shapes.length >= MAX_SHAPES) break
+  
         const cellOx = baseOx + c * (tw + gx)
         const cellOy = baseOy + r * (th + gy)
         const ct = nc > 1 ? c / (nc - 1) : 0
@@ -740,7 +739,7 @@ export function evaluateQuery(
 
         // Remap and push
         for (const s of localShapes) {
-          if (shapes.length >= MAX_SHAPES) break
+    
           shapes.push(remapShape(s, ox, oy, tw, th, mx, my))
         }
       }
@@ -808,7 +807,7 @@ export function evaluateQuery(
     const sinR = Math.sin(rot * Math.PI / 180)
 
     for (const s of inner.shapes) {
-      if (shapes.length >= MAX_SHAPES) break
+
       let out = { ...s, id: crypto.randomUUID() }
       // Shift to center, then apply scale/mirror/rotate around (0.5, 0.5)
       let lx = s.geom.x + dx, ly = s.geom.y + dy, lw = s.geom.w, lh = s.geom.h
