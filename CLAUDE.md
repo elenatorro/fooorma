@@ -25,14 +25,37 @@ pnpm tauri:build   # Build native app
 
 ```
 src/
-  App.svelte                  # Root component
+  App.svelte                  # Root: state management, undo, clipboard, export, mode switching
   main.ts                     # Entry point
   components/
-    TopBar.svelte             # Size presets + export
-    RightPanel.svelte         # Sketch selector + parameter sliders
-    Viewport.svelte           # Canvas with zoom/pan
+    TopBar.svelte             # Size presets, export, zoom controls
+    RightPanel.svelte         # Shape list, property editors, template builder, palettes, patterns, API snippets
+    Viewport.svelte           # Canvas with zoom/pan, hit-testing, drag-to-move, draw-to-create
     StatusBar.svelte          # Status footer
+    AboutPage.svelte          # About page with changelog
+    CodeEditor.svelte         # CodeMirror wrapper for code mode
+    SliderRow.svelte          # Reusable labeled slider component
+    GradColorEditor.svelte    # Color/gradient picker
   lib/
+    query/
+      index.ts                # evaluateQuery() — code API interpreter; shapesToCode() — serializer
+    layers/
+      types.ts                # Shape, ShapeStroke, ShapeGeom, ShapeTransform, ShapeEffect, Layer, Pattern
+      renderer2d.ts           # Canvas2D renderer: 2D shapes, 3D isometric projection, materials, masks
+    api-snippets.ts           # API reference snippets shown in code panel
+    palettes/
+      index.ts                # Built-in color palettes
+    patterns/
+      index.ts                # Built-in pattern/stamp definitions
+    persist/
+      index.ts                # .ooo file format save/load, localStorage auto-save
+    export-cmyk-tiff.ts       # CMYK TIFF encoder for print export
+    viewport.ts               # Zoom/pan constants (MIN_ZOOM, MAX_ZOOM)
+    editor-font.ts            # CodeMirror font loader
+    mcp-bridge/
+      index.svelte.ts         # MCP WebSocket bridge (Svelte integration)
+      handler.ts              # MCP command handler (shape/layer manipulation)
+      protocol.ts             # MCP message protocol types
     sketches/
       index.ts                # Sketch registry
       types.ts                # SketchDef, ParamDef interfaces
@@ -42,10 +65,14 @@ src/
       types.ts                # Renderer interface
       webgpu.ts               # WebGPU implementation
       webgl2.ts               # WebGL2 fallback
+mcp-server/                   # Standalone MCP server (Node.js, @modelcontextprotocol/sdk)
 src-tauri/
   src/main.rs / lib.rs        # Tauri app entry + init
-  tauri.conf.json             # Window: 1440×900, min 1024×600
+  tauri.conf.json             # Window: 1440×900, min 800×600
   Cargo.toml                  # tauri v2, serde, serde_json
+  .cargo/config.toml          # Default build target (x86_64-unknown-linux-gnu)
+.github/workflows/
+  release.yml                 # Multi-platform release CI (tag-triggered, creates GitHub draft release)
 ```
 
 ## Architecture
@@ -56,10 +83,11 @@ Each sketch is a `SketchDef` with:
 - GLSL shader (WebGL2)
 - Up to 8 named parameters (`ParamDef` with min/max/default/step)
 
-### Rendering Pipeline
+### GPU Sketch Rendering Pipeline
 - `createRenderer()` transparently selects WebGPU or WebGL2
 - Shared uniform buffer layout (48 bytes): `time (f32)`, `width (f32)`, `height (f32)`, `params[8] (f32)`
 - RAF loop drives animation
+- **Note**: This is for the GPU shader sketches only, not the 2D shape system
 
 ### Canvas / Viewport
 - Default artboard: 794×1123 px (A4 portrait)
@@ -171,6 +199,119 @@ endClip()
 
 **Data model:** `Shape.mask?: Shape[]` holds clip shapes, `Shape.children?: Shape[]` holds content (same as group).
 
+### 3D Shape System
+
+3D shapes (`cube`, `sphere`, `cylinder`, `torus`) are rendered as isometric projections onto the 2D canvas. They are **not** WebGL — everything is Canvas2D.
+
+**Pipeline** (`src/lib/layers/renderer2d.ts`):
+1. **Face generation** — `cubeFaces()`, `sphereFaces()`, `cylinderFaces()`, `torusFaces()` produce `RawFace[]` with 3D vertices + normals
+2. **Rotation** — `rotMatrix(rx, ry, rz)` returns a rotation function; default angles: rotateX=35°, rotateY=45°, rotateZ=0°
+3. **Projection** — `project(v3, cx, cy, depth)` maps 3D → 2D. `depth` controls perspective strength (0 = isometric, 1 = strong perspective)
+4. **Shading** — `shadeFromNormal()` computes diffuse + specular + alpha per face based on material type
+5. **Drawing** — `drawFaces()` sorts faces back-to-front (painter's algorithm), fills each face with shaded color, then strokes edges. Per-face fill-then-stroke ensures front faces occlude back face edges.
+
+**Materials** (`Material3D`): `default`, `metal`, `plastic`, `marble`, `glass`. Each material modifies shading (roughness, specular, alpha). Glass uses semi-transparent faces. Marble overlays noise texture via convex hull clipping.
+
+**Tessellation**: `smooth` parameter (3–128, default 32) controls subdivision segments. Glass auto-multiplies by 1.5× to reduce seam artifacts.
+
+**Transform properties** (3D-specific): `rotateX`, `rotateY`, `rotateZ`, `depth`, `smooth` — all stored in `ShapeTransform`.
+
+**Stroke modes**:
+- `stroke(hex, opacity, width, align, join)` — filled faces + edge lines (per-face in painter order, so back edges are naturally occluded)
+- `wireframe(hex, opacity, width, join)` — edges only, no face fill. Creates a `ShapeStroke` with `wireframe: true`.
+
+**Hit testing** (`Viewport.svelte`): `get3DBounds()` projects all 3D faces to compute a 2D bounding box in artboard pixels.
+
+### 2D Canvas Renderer
+
+`renderLayers2D()` in `src/lib/layers/renderer2d.ts` is the main rendering entry point. It iterates all visible layers and draws each shape.
+
+**Shape rendering** (non-3D):
+- Rect, ellipse, arc, triangle, line, curve, spline — standard Canvas2D path operations
+- **Sub-pixel bloat**: Rects expand by 0.5px to eliminate hairline seams between adjacent tiles
+- **Offscreen compositing**: Used for effects that need isolation (blur, shadow, noise, warp, bevel). Creates a temporary canvas, draws the shape, applies effects, then composites back.
+- **Gradient support**: `makeGradient()` converts `LinearGradient` / `RadialGradient` to `CanvasGradient`
+
+**Stroke rendering**:
+- Align: `center` (default), `inner` (clip to shape), `outer` (clip inverse)
+- Join: `miter`, `round`, `bevel`
+- Inner/outer alignment uses `clip()` + doubled line width
+
+**Mask rendering**: Uses a temporary offscreen canvas. Content is drawn first, then mask shapes are composited with `destination-in` so only content within mask alpha survives.
+
+**Effects** (`ShapeEffect`):
+- `shadow` — Canvas2D shadowBlur/shadowOffset
+- `blur` — CSS filter on offscreen canvas
+- `bevel` — luminance-based edge highlighting
+- `noise` — noise texture overlay via `globalCompositeOperation: 'overlay'`
+- `warp` — pixel displacement via sine waves on ImageData
+- `material` — 3D shapes only (see 3D section)
+
+### Layer & State Model
+
+**Layer** (`src/lib/layers/types.ts`):
+- `mode: 'manual' | 'code'` — manual stores `shapes[]`, code stores `query` string
+- `shapes: Shape[]` — manual mode source of truth
+- `query: string` — code mode source of truth (always preserved across mode switches)
+- `visible: boolean`, `bgColor?: string`
+
+**Mode switching** (`App.svelte: handleSetMode`):
+- **manual → code**: Regenerates query from shapes via `shapesToCode()`. If existing query produces matching shapes (fingerprint check), keeps original query to preserve loops/structure.
+- **code → manual**: Evaluates query via `evaluateQuery()`, bakes results into `shapes[]`. Groups are flattened via `flattenShapes()`, but masks are preserved.
+
+**State management** (`App.svelte`):
+- All state lives in `App.svelte` as `$state` runes
+- `resolvedLayers` (`$derived`): for code-mode layers, replaces `shapes` with evaluated results from `evaluateQuery()`. This is what the renderer and hit-testing use.
+- `drawableLayerId` (`$derived`): `null` for code-mode layers (disables canvas draw/select in Viewport)
+- Undo/redo: `commit()` snapshots `layers` state; undo stack managed manually
+
+**Composite shapes (mask/group)**:
+- Have a computed `geom` bounding box (set by `childrenBbox()` at creation time in `evaluateQuery`)
+- Drag-to-move in Viewport shifts all nested children's `geom` and `pts` recursively via `shiftShapeChildren()` in `App.svelte`
+
+### Viewport Interactions
+
+`Viewport.svelte` handles all canvas interaction:
+
+**Hit testing** (`shapeHit`):
+- Rect: axis-aligned bounding box
+- Ellipse: point-in-ellipse equation
+- Pts-based (line/curve/triangle/spline): bounding box of all points
+- 3D shapes: projected 2D bounding box via `get3DBounds()`
+- Mask/group: recursively test children and mask shapes
+
+**Drag modes**:
+- `moveDrag` — geom-based shapes (rect, ellipse, arc, 3D, mask, group). Updates `geom` via `onUpdateGeom`.
+- `ptsDrag` — pts-based shapes (line, curve, triangle). Shifts all `pts` by delta.
+- `multiMoveDrag` — multi-selection (Shift+click). Uses `onMoveBatch` to update all selected shapes at once.
+- `drawDrag` — click-on-empty creates new shape by dragging a rectangle.
+
+**Zoom/pan**: Mouse wheel zooms (0.05–20×), Space+drag or middle-click pans.
+
+### Persistence & Export
+
+**`.ooo` format** (`src/lib/persist/index.ts`): JSON-based project file containing layers, palettes, patterns (stamps), artboard size, project name.
+
+**Auto-save**: Debounced to localStorage on every state change.
+
+**Export**:
+- PNG at 1×, 2×, 4× scale
+- CMYK TIFF (`src/lib/export-cmyk-tiff.ts`) with naive RGB→CMYK conversion
+- CMYK soft-proof preview mode
+
+### MCP Server
+
+Two parts:
+- **`mcp-server/`** — standalone Node.js MCP server using `@modelcontextprotocol/sdk`. Runs as a subprocess, communicates via stdio.
+- **`src/lib/mcp-bridge/`** — in-app WebSocket bridge that connects the MCP server to the Svelte app state. `handler.ts` maps MCP tool calls to app state mutations (add/delete/modify layers, shapes, palettes).
+
+### Desktop (Tauri 2)
+
+- `src-tauri/` contains the Rust backend. Minimal — just launches a WebKitGTK webview.
+- `.cargo/config.toml` forces `x86_64-unknown-linux-gnu` target to avoid wasm target contamination.
+- Icons: PNG only (32x32, 128x128, 256x256). macOS/Windows icon formats removed from `tauri.conf.json` for now.
+- CI: `.github/workflows/release.yml` builds for Linux (ubuntu-22.04), macOS (aarch64 + x86_64), Windows on tag push. Creates draft GitHub Release via `tauri-apps/tauri-action@v0`.
+
 ## Shape / Model Consistency Rule
 
 **Any new shape type, shape property, or model change must be reflected across all three surfaces simultaneously — no exceptions:**
@@ -187,6 +328,9 @@ Missing any surface is a bug. Always check all three before considering a shape 
 - TypeScript strict mode throughout
 - Sketches are self-contained modules — add new ones by creating a file in `src/lib/sketches/` and registering in `index.ts`
 - Renderer abstraction hides API differences; shaders must be provided in both WGSL and GLSL
+- **Svelte 5 proxy gotcha**: `$state` objects are Proxies. `structuredClone()` throws on them — use `JSON.parse(JSON.stringify(obj))` for deep copies.
+- **API snippets**: `src/lib/api-snippets.ts` must be updated when adding/changing code API functions
+- **`new Function` exposure**: When adding a new code API function in `evaluateQuery()`, it must be added to both the parameter list and argument list of the `new Function(...)()` call at the bottom of the function
 
 ## Configuration Notes
 
