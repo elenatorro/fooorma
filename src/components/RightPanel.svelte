@@ -1277,14 +1277,14 @@ endClip()`,
           </div>
         {/each}
       </div>
-      <button class="add-layer-btn" onclick={onAddPalette}>+ New palette</button>
+      <button class="add-layer-btn" onclick={() => onAddPalette()}>+ New palette</button>
     </section>
 
     <!-- Usage hint -->
     <section class="section">
-      <p class="palette-hint">Use palette variables in code mode:<br>
+      <p class="palette-hint">Use palette() in code mode:<br>
         <code>repeat(8, (i, t) =&gt; &#123;<br>
-          &nbsp;&nbsp;rect(…, Neon[i % Neon.length])<br>
+          &nbsp;&nbsp;rect(…, palette('Neon', i))<br>
         &#125;)</code>
       </p>
     </section>
