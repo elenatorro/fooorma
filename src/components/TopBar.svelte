@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { User } from '@supabase/supabase-js'
+
   interface SizePreset { label: string; w: number; h: number }
 
   const {
@@ -18,6 +20,12 @@
     onNew,
     onToggleTheme,
     onAbout,
+    user = null,
+    authLoading = false,
+    authError = null,
+    onSignInWithGoogle,
+    onSignOut,
+    onProjects,
   }: {
     artW: number
     artH: number
@@ -35,6 +43,12 @@
     onNew: () => void
     onToggleTheme: () => void
     onAbout: () => void
+    user?: User | null
+    authLoading?: boolean
+    authError?: string | null
+    onSignInWithGoogle?: () => void
+    onSignOut?: () => void
+    onProjects?: () => void
   } = $props()
 
 
@@ -109,6 +123,15 @@
   ]
   const formatLabel = $derived(exportFormat === 'cmyk-tiff' ? 'TIFF' : 'PNG')
   let showExportMenu = $state(false)
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  let showAuthMenu = $state(false)
+
+  function closeAuthMenu() {
+    showAuthMenu = false
+  }
+
+  const userInitial = $derived(user?.email?.[0]?.toUpperCase() ?? '?')
 </script>
 
 <header class="topbar">
@@ -214,6 +237,29 @@
       </div>
     {/if}
   </div>
+
+  {#if onSignInWithGoogle}
+    <div class="auth-wrap">
+      {#if user}
+        <button class="avatar-btn" onclick={() => showAuthMenu = !showAuthMenu} title={user.email ?? 'Account'}>
+          {userInitial}
+        </button>
+        {#if showAuthMenu}
+          <div class="auth-dropdown">
+            <div class="auth-email">{user.email}</div>
+            {#if onProjects}
+              <button class="auth-menu-btn" onclick={() => { onProjects!(); closeAuthMenu() }}>My Projects</button>
+            {/if}
+            <button class="auth-menu-btn" onclick={() => { onSignOut?.(); closeAuthMenu() }}>Sign out</button>
+          </div>
+        {/if}
+      {:else}
+        <button class="file-btn" onclick={() => onSignInWithGoogle!()} disabled={authLoading}>
+          {authLoading ? '...' : 'Sign in with Google'}
+        </button>
+      {/if}
+    </div>
+  {/if}
 </header>
 
 <!-- hidden file input -->
@@ -235,6 +281,11 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="overlay" onclick={() => showPresets = false}></div>
+{/if}
+{#if showAuthMenu}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="overlay" onclick={closeAuthMenu}></div>
 {/if}
 
 <style>
@@ -544,4 +595,65 @@
     transition: border-color .12s;
   }
   .project-name-input:focus { border-color: var(--accent); color: var(--text-1); }
+
+  /* ── Auth ── */
+  .auth-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .avatar-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color .12s;
+  }
+  .avatar-btn:hover { border-color: var(--accent); }
+
+  .auth-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    z-index: 200;
+    min-width: 200px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  .auth-email {
+    font-size: 11px;
+    color: var(--text-4);
+    padding: 10px 12px 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .auth-menu-btn {
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--text-2);
+    font-size: 12px;
+    padding: 8px 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: background .1s;
+  }
+  .auth-menu-btn:hover { background: var(--bg-hover); color: var(--text-1); }
+
 </style>

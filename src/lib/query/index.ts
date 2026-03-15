@@ -171,12 +171,27 @@ export interface QueryResult {
 }
 
 
+// Globals to shadow when running untrusted code (shared projects)
+const SANDBOXED_GLOBALS = [
+  'window', 'document', 'globalThis', 'self',
+  'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource',
+  'localStorage', 'sessionStorage', 'indexedDB', 'caches',
+  'navigator', 'location', 'history',
+  'eval', 'Function', 'importScripts',
+  'postMessage', 'opener', 'parent', 'top', 'frames',
+  'cookieStore', 'crypto',
+  'alert', 'confirm', 'prompt', 'print',
+  'setTimeout', 'setInterval', 'requestAnimationFrame',
+  'queueMicrotask',
+]
+
 export function evaluateQuery(
   code: string,
   artW = 794,
   artH = 1123,
   palettes: { name: string; colors: string[] }[] = [],
   stamps: Pattern[] = [],
+  options?: { sandboxed?: boolean },
 ): QueryResult {
   const shapes: Shape[] = []
   const errors: string[] = []
@@ -879,7 +894,7 @@ export function evaluateQuery(
 
   // ── Execute ───────────────────────────────────────────────────────────────
   try {
-    new Function(
+    const paramNames = [
       'rect', 'ellipse', 'arc', 'line', 'curve', 'triangle', 'spline', 'beginSpline', 'vertex', 'endSpline',
       'cube', 'sphere', 'cylinder', 'torus',
       'beginGroup', 'endGroup',
@@ -895,8 +910,8 @@ export function evaluateQuery(
       'PI', 'TAU', 'E',
       'sin', 'cos', 'tan', 'abs', 'floor', 'ceil', 'round', 'sqrt', 'pow', 'min', 'max', 'random',
       'lerp', 'clamp', 'map', 'fract', 'smoothstep', 'nz',
-      code,
-    )(
+    ]
+    const paramValues: unknown[] = [
       rect, ellipse, arc, line, curve, triangle, spline, beginSpline, vertex, endSpline,
       cube, sphere, cylinder, torus,
       beginGroup, endGroup,
@@ -913,7 +928,17 @@ export function evaluateQuery(
       Math.sin, Math.cos, Math.tan, Math.abs, Math.floor, Math.ceil,
       Math.round, Math.sqrt, Math.pow, Math.min, Math.max, Math.random,
       lerp, clamp, map, fract, smoothstep, nz,
-    )
+    ]
+
+    // Shadow dangerous globals when running untrusted code
+    if (options?.sandboxed) {
+      for (const name of SANDBOXED_GLOBALS) {
+        paramNames.push(name)
+        paramValues.push(undefined)
+      }
+    }
+
+    new Function(...paramNames, code)(...paramValues)
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err))
   }

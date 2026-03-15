@@ -4,6 +4,11 @@ import { createHandler } from './handler'
 
 const RECONNECT_INTERVAL = 10_000  // retry every 10s, silently
 
+// SECURITY: The MCP WebSocket bridge only connects to localhost. This is local-only
+// dev tooling — there is no authentication token. Any process on the local machine can
+// connect to the WS port. If this bridge is ever exposed beyond localhost, a shared
+// secret / auth token must be added to the handshake.
+
 export class FooormaBridge {
   private ws: WebSocket | null = null
   private handler: (method: string, params?: Record<string, unknown>) => unknown
@@ -34,6 +39,11 @@ export class FooormaBridge {
     }
 
     this.ws.onmessage = (event) => {
+      // Only accept messages from localhost connections
+      if (event.origin && !event.origin.match(/^wss?:\/\/localhost(:\d+)?$/)) {
+        console.warn('[mcp] rejected message from non-localhost origin:', event.origin)
+        return
+      }
       try {
         const req = JSON.parse(event.data as string) as BridgeRequest
         let result: unknown

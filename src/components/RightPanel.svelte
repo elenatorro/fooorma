@@ -73,12 +73,16 @@
   } = $props()
 
   /** Simple syntax highlight for stamp code previews — reuses CodeMirror CSS vars */
+  function escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  }
+
   function highlightCode(code: string): string {
-    return code.replace(
-      /\/\/.*|'[^']*'|"[^"]*"|`[^`]*`|\b(\d+\.?\d*)\b|\b(true|false|null|undefined|const|let|var|if|else|for|while|return|function)\b|([a-zA-Z_$]\w*)\s*(?=\()/g,
+    return escapeHtml(code).replace(
+      /\/\/.*|&#39;[^&#]*(?:&#39;)|&quot;[^&]*(?:&quot;)|`[^`]*`|\b(\d+\.?\d*)\b|\b(true|false|null|undefined|const|let|var|if|else|for|while|return|function)\b|([a-zA-Z_$]\w*)\s*(?=\()/g,
       (m, num, kw, fn) => {
         if (m.startsWith('//'))  return `<span style="color:var(--cm-comment);font-style:italic">${m}</span>`
-        if (m.startsWith("'") || m.startsWith('"') || m.startsWith('`'))
+        if (m.startsWith("&#39;") || m.startsWith('&quot;') || m.startsWith('`'))
           return `<span style="color:var(--cm-string)">${m}</span>`
         if (num !== undefined)   return `<span style="color:var(--cm-number)">${m}</span>`
         if (kw !== undefined)    return `<span style="color:var(--cm-keyword)">${m}</span>`

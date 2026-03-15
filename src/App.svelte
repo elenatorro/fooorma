@@ -37,13 +37,60 @@
   import { initEditorFont } from './lib/editor-font'
   initEditorFont()
 
+  import { createAuthState, supabaseConfigured } from './lib/auth.svelte'
+
+  const auth = supabaseConfigured ? createAuthState() : null
+
   import AboutPage       from './components/AboutPage.svelte'
+  import ProjectsPanel   from './components/ProjectsPanel.svelte'
+  import SharedView      from './components/SharedView.svelte'
   import TopBar          from './components/TopBar.svelte'
   import RightPanel      from './components/RightPanel.svelte'
   import CodePanel       from './components/CodePanel.svelte'
   import StatusBar       from './components/StatusBar.svelte'
   import Viewport        from './components/Viewport.svelte'
   import { serializeProject, parseProject } from './lib/persist/index'
+
+  // ── Cloud projects ─────────────────────────────────────────────────────────
+  function handleCloudLoad(content: string, name: string) {
+    try {
+      const { projectName: loadedName, layers: newLayers, artW: newW, artH: newH, customPalettes: newPalettes, customPatterns: newPatterns } = parseProject(content)
+      projectName     = loadedName ?? name
+      layers          = newLayers
+      customPalettes  = newPalettes ?? []
+      customPatterns  = newPatterns ?? []
+      activeLayerId    = newLayers[newLayers.length - 1]?.id ?? null
+      activeShapeId    = null
+      selectedShapeIds = []
+      past = []; future = []
+      if (newW !== artW || newH !== artH) handleSizeChange(newW, newH)
+      else { updateVP(); fit() }
+    } catch (e) {
+      console.error('Failed to load cloud project:', e)
+    }
+  }
+
+  function getProjectContent(): string {
+    return serializeProject({ projectName, layers, artW, artH, customPalettes, customPatterns })
+  }
+
+  function getProjectThumbnail(): Promise<Blob> {
+    const maxDim = 300
+    const scale = Math.min(maxDim / artW, maxDim / artH)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(artW * scale)
+    canvas.height = Math.round(artH * scale)
+    const ctx = canvas.getContext('2d')!
+    ctx.scale(scale, scale)
+    renderLayers2D(ctx, resolvedLayers, artW, artH)
+    ctx.globalCompositeOperation = 'destination-over'
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, artW, artH)
+    ctx.globalCompositeOperation = 'source-over'
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob!), 'image/webp', 0.7)
+    })
+  }
   import { BUILTIN_PALETTES } from './lib/palettes/index'
   import { BUILTIN_PATTERNS } from './lib/patterns/index'
   import type { Palette } from './lib/palettes/index'
@@ -63,12 +110,29 @@
   function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark' }
 
   // ── Page routing ─────────────────────────────────────────────────────────
-  let page = $state<'app' | 'about'>(location.hash === '#/about' ? 'about' : 'app')
+  function parseHash(): { page: 'app' | 'about' | 'view'; viewUserId?: string; viewSlug?: string } {
+    const hash = location.hash
+    if (hash === '#/about') return { page: 'about' }
+    const viewMatch = hash.match(/^#\/view\/([^/]+)\/(.+)$/)
+    if (viewMatch) return { page: 'view', viewUserId: viewMatch[1], viewSlug: decodeURIComponent(viewMatch[2]) }
+    return { page: 'app' }
+  }
+
+  const initRoute = parseHash()
+  let page = $state<'app' | 'about' | 'view'>(initRoute.page)
+  let viewUserId = $state(initRoute.viewUserId ?? '')
+  let viewSlug = $state(initRoute.viewSlug ?? '')
+  let showProjectsPanel = $state(false)
 
   function goAbout() { page = 'about'; history.pushState(null, '', '#/about') }
-  function goApp()   { page = 'app';   history.pushState(null, '', '#/') }
+  function goApp()   { page = 'app'; viewUserId = ''; viewSlug = ''; history.pushState(null, '', '#/') }
 
-  function onPopState() { page = location.hash === '#/about' ? 'about' : 'app' }
+  function onPopState() {
+    const r = parseHash()
+    page = r.page
+    viewUserId = r.viewUserId ?? ''
+    viewSlug = r.viewSlug ?? ''
+  }
   if (typeof window !== 'undefined') window.addEventListener('popstate', onPopState)
 
   // ── Autosave / restore ─────────────────────────────────────────────────────
@@ -962,6 +1026,8 @@
 
 {#if page === 'about'}
   <AboutPage onBack={goApp} />
+{:else if page === 'view' && viewUserId && viewSlug}
+  <SharedView userId={viewUserId} slug={viewSlug} onBack={goApp} {theme} onToggleTheme={toggleTheme} />
 {:else}
 <TopBar
   {artW}
@@ -980,6 +1046,12 @@
   onLoad={handleLoad}
   onToggleTheme={toggleTheme}
   onAbout={goAbout}
+  user={auth?.user ?? null}
+  authLoading={auth?.loading ?? false}
+  authError={auth?.error ?? null}
+  onSignInWithGoogle={auth ? () => auth.signInWithGoogle() : undefined}
+  onSignOut={auth ? () => auth.signOut() : undefined}
+  onProjects={supabaseConfigured && auth ? () => { showProjectsPanel = !showProjectsPanel } : undefined}
 />
 
 <Viewport
@@ -1091,6 +1163,17 @@
   ondblclick={() => { panelWidth = Math.round(window.innerWidth * 0.5); updateVP() }}
   title="Drag to resize · Double-click for 50%"
 ></div>
+{/if}
+
+{#if showProjectsPanel && auth?.user}
+  <ProjectsPanel
+    userId={auth.user.id}
+    {projectName}
+    onClose={() => showProjectsPanel = false}
+    onLoadProject={(content, name) => { handleCloudLoad(content, name); showProjectsPanel = false }}
+    onGetProjectContent={getProjectContent}
+    onGetThumbnail={getProjectThumbnail}
+  />
 {/if}
 
 <style>
