@@ -5,17 +5,21 @@
   const {
     userId,
     projectName,
+    authorName,
     onClose,
     onLoadProject,
     onGetProjectContent,
     onGetThumbnail,
+    onGetThumbnailFromContent,
   }: {
     userId: string
     projectName: string
+    authorName: string
     onClose: () => void
     onLoadProject: (content: string, name: string) => void
     onGetProjectContent: () => string
     onGetThumbnail: () => Promise<Blob>
+    onGetThumbnailFromContent: (content: string) => Promise<Blob>
   } = $props()
 
   const cloud = createCloudStore(userId)
@@ -67,15 +71,8 @@
     shareUrl = null
     const content = await cloud.loadProject(file.name)
     if (!content) { sharingName = null; return }
-    // Fetch existing thumbnail from private bucket
-    let thumb: Blob | undefined
-    if (file.thumbUrl) {
-      try {
-        const res = await fetch(file.thumbUrl)
-        if (res.ok) thumb = await res.blob()
-      } catch {}
-    }
-    const url = await cloud.shareProject(file.name, content, thumb)
+    const thumb = await onGetThumbnailFromContent(content)
+    const url = await cloud.shareProject(file.name, content, thumb, authorName)
     sharingName = null
     if (url) {
       shareUrl = url

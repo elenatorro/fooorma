@@ -19,6 +19,7 @@
   let loading = $state(true)
   let errorMsg = $state<string | null>(null)
   let projectName = $state('')
+  let authorName = $state<string | null>(null)
   let canvas: HTMLCanvasElement
 
   onMount(async () => {
@@ -32,6 +33,7 @@
     try {
       const project = parseProject(result.content)
       projectName = slug || project.projectName || 'Untitled'
+      authorName = result.authorName
       const artW = project.artW
       const artH = project.artH
       const allPalettes = [...BUILTIN_PALETTES, ...(project.customPalettes ?? [])]
@@ -68,7 +70,7 @@
     <button class="back-btn" onclick={onBack}>← Back</button>
     <span class="view-logo">fooorma</span>
     {#if projectName}
-      <span class="view-name">{projectName}</span>
+      <span class="view-name">{projectName}{#if authorName} <span class="view-author">by {authorName}</span>{/if}</span>
     {/if}
     <div class="spacer"></div>
     <button class="theme-btn" onclick={onToggleTheme} title="Toggle light/dark theme">{theme === 'dark' ? '◑' : '◐'}</button>
@@ -129,6 +131,10 @@
   .view-name {
     font-size: 13px;
     color: var(--text-3);
+  }
+
+  .view-author {
+    color: var(--text-5);
   }
 
   .spacer { flex: 1; }

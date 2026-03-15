@@ -74,22 +74,40 @@
     return serializeProject({ projectName, layers, artW, artH, customPalettes, customPatterns })
   }
 
-  function getProjectThumbnail(): Promise<Blob> {
+  function renderThumbnail(srcLayers: Layer[], w: number, h: number): Promise<Blob> {
     const maxDim = 1200
-    const scale = Math.min(maxDim / artW, maxDim / artH)
+    const scale = Math.min(maxDim / w, maxDim / h)
     const canvas = document.createElement('canvas')
-    canvas.width = Math.round(artW * scale)
-    canvas.height = Math.round(artH * scale)
+    canvas.width = Math.round(w * scale)
+    canvas.height = Math.round(h * scale)
     const ctx = canvas.getContext('2d')!
     ctx.scale(scale, scale)
-    renderLayers2D(ctx, resolvedLayers, artW, artH)
+    renderLayers2D(ctx, srcLayers, w, h)
     ctx.globalCompositeOperation = 'destination-over'
     ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, artW, artH)
+    ctx.fillRect(0, 0, w, h)
     ctx.globalCompositeOperation = 'source-over'
     return new Promise((resolve) => {
       canvas.toBlob((blob) => resolve(blob!), 'image/png')
     })
+  }
+
+  function getProjectThumbnail(): Promise<Blob> {
+    return renderThumbnail(resolvedLayers, artW, artH)
+  }
+
+  function getThumbnailFromContent(content: string): Promise<Blob> {
+    const p = parseProject(content)
+    const pals = [...BUILTIN_PALETTES, ...(p.customPalettes ?? [])]
+    const pats = [...BUILTIN_PATTERNS, ...(p.customPatterns ?? [])].filter(pt => pt.code)
+    const resolved = p.layers.map(l => {
+      if (l.mode !== 'code') return l
+      try {
+        const { shapes } = evaluateQuery(l.query, p.artW, p.artH, pals, pats)
+        return { ...l, shapes }
+      } catch { return { ...l, shapes: [] } }
+    })
+    return renderThumbnail(resolved, p.artW, p.artH)
   }
   import { BUILTIN_PALETTES } from './lib/palettes/index'
   import { BUILTIN_PATTERNS } from './lib/patterns/index'
@@ -1173,10 +1191,12 @@
   <ProjectsPanel
     userId={auth.user.id}
     {projectName}
+    authorName={auth.user.user_metadata?.full_name ?? auth.user.email ?? ''}
     onClose={() => showProjectsPanel = false}
     onLoadProject={(content, name) => { handleCloudLoad(content, name); showProjectsPanel = false }}
     onGetProjectContent={getProjectContent}
     onGetThumbnail={getProjectThumbnail}
+    onGetThumbnailFromContent={getThumbnailFromContent}
   />
 {/if}
 

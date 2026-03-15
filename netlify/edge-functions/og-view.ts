@@ -8,6 +8,21 @@ function thumbUrl(userId: string, slug: string): string {
   return `${SUPABASE_URL}/storage/v1/object/public/shared/${userId}/${slug}.thumb.png`
 }
 
+function profileUrl(userId: string): string {
+  return `${SUPABASE_URL}/storage/v1/object/public/shared/${userId}/_profile.json`
+}
+
+async function fetchAuthorName(userId: string): Promise<string | null> {
+  try {
+    const res = await fetch(profileUrl(userId))
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.name ?? null
+  } catch {
+    return null
+  }
+}
+
 export default async (request: Request, context: Context) => {
   const ua = request.headers.get("user-agent") ?? ""
 
@@ -21,8 +36,11 @@ export default async (request: Request, context: Context) => {
 
   const userId = match[1]
   const slug = decodeURIComponent(match[2])
-  const title = `${slug} — fooorma`
-  const description = `Procedural art created with fooorma`
+  const author = await fetchAuthorName(userId)
+  const title = author ? `${slug} by ${author} — fooorma` : `${slug} — fooorma`
+  const description = author
+    ? `Procedural art by ${author}, created with fooorma`
+    : `Procedural art created with fooorma`
   const image = thumbUrl(userId, slug)
   const url = request.url
 

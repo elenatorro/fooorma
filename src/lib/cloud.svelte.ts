@@ -50,12 +50,22 @@ export function createCloudStore(userId: string) {
         updated_at: f.updated_at ?? '',
         thumbUrl: undefined,
       }))
-      // Load signed URLs for private buckets
-      for (let i = 0; i < files.length; i++) {
-        const tp = thumbPath(files[i].name)
-        const { data: signedData } = await supabase!.storage.from(bucket).createSignedUrl(tp, 3600)
-        if (signedData?.signedUrl) {
-          files[i] = { ...files[i], thumbUrl: signedData.signedUrl }
+      // Load signed URLs for thumbnails
+      // List all files to find which thumb format exists (.png or legacy .webp)
+      const { data: allFiles } = await supabase!.storage.from(bucket).list(folder)
+      if (allFiles) {
+        const fileNames = new Set(allFiles.map(f => f.name))
+        for (let i = 0; i < files.length; i++) {
+          const base = files[i].name.replace(/\.ooo$/, '')
+          const thumbFile = fileNames.has(`${base}.thumb.png`) ? `${base}.thumb.png`
+            : fileNames.has(`${base}.thumb.webp`) ? `${base}.thumb.webp`
+            : null
+          if (thumbFile) {
+            const { data: signedData } = await supabase!.storage.from(bucket).createSignedUrl(`${folder}/${thumbFile}`, 3600)
+            if (signedData?.signedUrl) {
+              files[i] = { ...files[i], thumbUrl: signedData.signedUrl }
+            }
+          }
         }
       }
     }
@@ -120,12 +130,13 @@ export function createCloudStore(userId: string) {
     loading = true
     error = null
     const path = `${folder}/${name}`
-    const tp = thumbPath(name)
+    const base = name.replace(/\.ooo$/, '')
+    const tpPng = `${folder}/${base}.thumb.png`
+    const tpWebp = `${folder}/${base}.thumb.webp`
     // Also remove from shared bucket
     const sp = sharedPath(name)
-    const st = `${folder}/${name.replace(/\.ooo$/, '.thumb.png')}`
-    await supabase.storage.from(SHARED_BUCKET).remove([sp, st]).catch(() => {})
-    const { error: err } = await supabase.storage.from(bucket).remove([path, tp])
+    await supabase.storage.from(SHARED_BUCKET).remove([sp, `${folder}/${base}.thumb.png`, `${folder}/${base}.thumb.webp`]).catch(() => {})
+    const { error: err } = await supabase.storage.from(bucket).remove([path, tpPng, tpWebp])
     if (err) {
       error = err.message
     }
@@ -133,7 +144,7 @@ export function createCloudStore(userId: string) {
     loading = false
   }
 
-  async function shareProject(name: string, content: string, thumbnail?: Blob): Promise<string | null> {
+  async function shareProject(name: string, content: string, thumbnail?: Blob, authorName?: string): Promise<string | null> {
     if (!supabase) return null
     name = sanitizeName(name)
     loading = true
@@ -158,6 +169,15 @@ export function createCloudStore(userId: string) {
       await supabase.storage.from(SHARED_BUCKET).upload(st, thumbnail, {
         upsert: true,
         contentType: 'image/png',
+      })
+    }
+
+    // Upload author profile
+    if (authorName) {
+      const profileBlob = new Blob([JSON.stringify({ name: authorName })], { type: 'application/json' })
+      await supabase.storage.from(SHARED_BUCKET).upload(`${folder}/_profile.json`, profileBlob, {
+        upsert: true,
+        contentType: 'application/json',
       })
     }
 
@@ -189,7 +209,7 @@ export function createCloudStore(userId: string) {
 }
 
 /** Load a shared project by userId + slug (no auth required) */
-export async function loadSharedProject(userId: string, slug: string): Promise<{ content: string; thumbUrl: string | null } | null> {
+export async function loadSharedProject(userId: string, slug: string): Promise<{ content: string; thumbUrl: string | null; authorName: string | null } | null> {
   if (!supabase) return null
   slug = sanitizeName(slug)
   const path = `${userId}/${slug}.ooo`
@@ -199,5 +219,15 @@ export async function loadSharedProject(userId: string, slug: string): Promise<{
 
   const thumbPath = `${userId}/${slug}.thumb.png`
   const { data: urlData } = supabase.storage.from(SHARED_BUCKET).getPublicUrl(thumbPath)
-  return { content, thumbUrl: urlData?.publicUrl ?? null }
+
+  let authorName: string | null = null
+  try {
+    const { data: profileData } = await supabase.storage.from(SHARED_BUCKET).download(`${userId}/_profile.json`)
+    if (profileData) {
+      const profile = JSON.parse(await profileData.text())
+      authorName = profile.name ?? null
+    }
+  } catch {}
+
+  return { content, thumbUrl: urlData?.publicUrl ?? null, authorName }
 }
