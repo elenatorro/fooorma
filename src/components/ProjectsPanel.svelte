@@ -67,7 +67,8 @@
     shareUrl = null
     const content = await cloud.loadProject(file.name)
     if (!content) { sharingName = null; return }
-    const url = await cloud.shareProject(file.name, content)
+    const thumb = await onGetThumbnail()
+    const url = await cloud.shareProject(file.name, content, thumb)
     sharingName = null
     if (url) {
       shareUrl = url
@@ -163,7 +164,11 @@
 
   <div class="panel-footer">
     <span class="footer-note">Free plan: up to {cloud.maxProjects} projects.</span>
-    <a class="footer-link" href="mailto:hola@fooorma.com">Need more? Contact us</a>
+    <span class="footer-links">
+      <a class="footer-link" href="https://bsky.app/profile/fooorma.bsky.social" target="_blank" rel="noopener">Follow us</a>
+      <span class="footer-sep">·</span>
+      <a class="footer-link" href="mailto:hola@elenatorro.com">Need more? Contact us</a>
+    </span>
   </div>
 </div>
 
@@ -441,4 +446,15 @@
     text-decoration: none;
   }
   .footer-link:hover { text-decoration: underline; }
+
+  .footer-links {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .footer-sep {
+    color: var(--text-5);
+    font-size: 10px;
+  }
 </style>

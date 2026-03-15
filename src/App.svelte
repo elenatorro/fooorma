@@ -110,7 +110,11 @@
   function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark' }
 
   // ── Page routing ─────────────────────────────────────────────────────────
-  function parseHash(): { page: 'app' | 'about' | 'view'; viewUserId?: string; viewSlug?: string } {
+  function parseRoute(): { page: 'app' | 'about' | 'view'; viewUserId?: string; viewSlug?: string } {
+    // Path-based /view/ routes (for shareable URLs with OG metadata)
+    const pathMatch = location.pathname.match(/^\/view\/([^/]+)\/(.+)$/)
+    if (pathMatch) return { page: 'view', viewUserId: pathMatch[1], viewSlug: decodeURIComponent(pathMatch[2]) }
+    // Hash-based routes (legacy + in-app navigation)
     const hash = location.hash
     if (hash === '#/about') return { page: 'about' }
     const viewMatch = hash.match(/^#\/view\/([^/]+)\/(.+)$/)
@@ -118,17 +122,17 @@
     return { page: 'app' }
   }
 
-  const initRoute = parseHash()
+  const initRoute = parseRoute()
   let page = $state<'app' | 'about' | 'view'>(initRoute.page)
   let viewUserId = $state(initRoute.viewUserId ?? '')
   let viewSlug = $state(initRoute.viewSlug ?? '')
   let showProjectsPanel = $state(false)
 
   function goAbout() { page = 'about'; history.pushState(null, '', '#/about') }
-  function goApp()   { page = 'app'; viewUserId = ''; viewSlug = ''; history.pushState(null, '', '#/') }
+  function goApp()   { page = 'app'; viewUserId = ''; viewSlug = ''; history.pushState(null, '', '/') }
 
   function onPopState() {
-    const r = parseHash()
+    const r = parseRoute()
     page = r.page
     viewUserId = r.viewUserId ?? ''
     viewSlug = r.viewSlug ?? ''

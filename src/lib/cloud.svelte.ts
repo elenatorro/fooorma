@@ -163,7 +163,7 @@ export function createCloudStore(userId: string) {
 
     loading = false
     const slug = slugFromName(name)
-    return `${window.location.origin}${window.location.pathname}#/view/${folder}/${encodeURIComponent(slug)}`
+    return `${window.location.origin}/view/${folder}/${encodeURIComponent(slug)}`
   }
 
   async function unshareProject(name: string) {
