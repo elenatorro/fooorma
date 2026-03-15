@@ -161,7 +161,10 @@
     {/if}
   </div>
 
-
+  <div class="panel-footer">
+    <span class="footer-note">Free plan: up to {cloud.maxProjects} projects.</span>
+    <a class="footer-link" href="mailto:hola@fooorma.com">Need more? Contact us</a>
+  </div>
 </div>
 
 <style>
@@ -417,4 +420,25 @@
   .card-action-btn:disabled { opacity: .5; cursor: default; }
   .card-action-btn.delete { flex: 0; padding: 3px 6px; }
   .card-action-btn.delete:hover { border-color: #ef4444; color: #ef4444; }
+
+  .panel-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .footer-note {
+    font-size: 10px;
+    color: var(--text-5);
+  }
+
+  .footer-link {
+    font-size: 10px;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .footer-link:hover { text-decoration: underline; }
 </style>
