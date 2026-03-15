@@ -67,7 +67,14 @@
     shareUrl = null
     const content = await cloud.loadProject(file.name)
     if (!content) { sharingName = null; return }
-    const thumb = await onGetThumbnail()
+    // Fetch existing thumbnail from private bucket
+    let thumb: Blob | undefined
+    if (file.thumbUrl) {
+      try {
+        const res = await fetch(file.thumbUrl)
+        if (res.ok) thumb = await res.blob()
+      } catch {}
+    }
     const url = await cloud.shareProject(file.name, content, thumb)
     sharingName = null
     if (url) {

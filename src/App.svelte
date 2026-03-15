@@ -75,7 +75,7 @@
   }
 
   function getProjectThumbnail(): Promise<Blob> {
-    const maxDim = 300
+    const maxDim = 1200
     const scale = Math.min(maxDim / artW, maxDim / artH)
     const canvas = document.createElement('canvas')
     canvas.width = Math.round(artW * scale)
@@ -88,7 +88,7 @@
     ctx.fillRect(0, 0, artW, artH)
     ctx.globalCompositeOperation = 'source-over'
     return new Promise((resolve) => {
-      canvas.toBlob((blob) => resolve(blob!), 'image/webp', 0.7)
+      canvas.toBlob((blob) => resolve(blob!), 'image/png')
     })
   }
   import { BUILTIN_PALETTES } from './lib/palettes/index'
