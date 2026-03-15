@@ -37,12 +37,13 @@
       const artW = project.artW
       const artH = project.artH
       const allPalettes = [...BUILTIN_PALETTES, ...(project.customPalettes ?? [])]
-      const allPatterns = [...BUILTIN_PATTERNS, ...(project.customPatterns ?? [])]
+      const allPatterns = [...BUILTIN_PATTERNS, ...(project.customPatterns ?? [])].filter(p => p.code)
 
       // Resolve code layers
       const resolved: Layer[] = project.layers.map(l => {
         if (l.mode === 'code' && l.query) {
-          const { shapes } = evaluateQuery(l.query, artW, artH, allPalettes, allPatterns, { sandboxed: true })
+          const { shapes, errors } = evaluateQuery(l.query, artW, artH, allPalettes, allPatterns, { sandboxed: true })
+          if (errors.length) console.warn('Layer eval errors:', errors)
           return { ...l, shapes }
         }
         return l

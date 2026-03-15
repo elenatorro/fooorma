@@ -35,9 +35,13 @@
   async function handleSave() {
     if (!saveName.trim()) return
     saving = true
-    const content = onGetProjectContent()
-    const thumb = await onGetThumbnail()
-    await cloud.saveProject(saveName.trim(), content, thumb)
+    try {
+      const content = onGetProjectContent()
+      const thumb = await onGetThumbnail()
+      await cloud.saveProject(saveName.trim(), content, thumb)
+    } catch (e) {
+      console.error('Save failed:', e)
+    }
     saving = false
   }
 

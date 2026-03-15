@@ -74,8 +74,7 @@
     return serializeProject({ projectName, layers, artW, artH, customPalettes, customPatterns })
   }
 
-  function renderThumbnail(srcLayers: Layer[], w: number, h: number): Promise<Blob> {
-    const maxDim = 1200
+  function renderThumbnail(srcLayers: Layer[], w: number, h: number, maxDim = 600): Promise<Blob> {
     const scale = Math.min(maxDim / w, maxDim / h)
     const canvas = document.createElement('canvas')
     canvas.width = Math.round(w * scale)
@@ -93,7 +92,7 @@
   }
 
   function getProjectThumbnail(): Promise<Blob> {
-    return renderThumbnail(resolvedLayers, artW, artH)
+    return renderThumbnail(resolvedLayers, artW, artH, 400)
   }
 
   function getThumbnailFromContent(content: string): Promise<Blob> {
@@ -107,7 +106,7 @@
         return { ...l, shapes }
       } catch { return { ...l, shapes: [] } }
     })
-    return renderThumbnail(resolved, p.artW, p.artH)
+    return renderThumbnail(resolved, p.artW, p.artH, 1200)
   }
   import { BUILTIN_PALETTES } from './lib/palettes/index'
   import { BUILTIN_PATTERNS } from './lib/patterns/index'

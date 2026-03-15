@@ -219,15 +219,17 @@ export async function loadSharedProject(userId: string, slug: string): Promise<{
 
   const thumbPath = `${userId}/${slug}.thumb.png`
   const { data: urlData } = supabase.storage.from(SHARED_BUCKET).getPublicUrl(thumbPath)
+  const thumbUrl = urlData?.publicUrl ?? null
 
+  // Fetch author name separately — must not block content delivery
   let authorName: string | null = null
   try {
-    const { data: profileData } = await supabase.storage.from(SHARED_BUCKET).download(`${userId}/_profile.json`)
-    if (profileData) {
+    const { data: profileData, error: profileErr } = await supabase.storage.from(SHARED_BUCKET).download(`${userId}/_profile.json`)
+    if (!profileErr && profileData) {
       const profile = JSON.parse(await profileData.text())
       authorName = profile.name ?? null
     }
   } catch {}
 
-  return { content, thumbUrl: urlData?.publicUrl ?? null, authorName }
+  return { content, thumbUrl, authorName }
 }
