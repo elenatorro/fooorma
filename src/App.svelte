@@ -93,9 +93,12 @@
     thumb.height = Math.round(h * scale)
     const tctx = thumb.getContext('2d')!
     tctx.drawImage(full, 0, 0, thumb.width, thumb.height)
-    return new Promise((resolve) => {
-      thumb.toBlob((blob) => resolve(blob!), 'image/png')
-    })
+    // Use toDataURL→Blob conversion (toBlob produces blank PNGs in some Firefox versions)
+    const dataUrl = thumb.toDataURL('image/png')
+    const bin = atob(dataUrl.split(',')[1])
+    const arr = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+    return Promise.resolve(new Blob([arr], { type: 'image/png' }))
   }
 
   function getProjectThumbnail(): Promise<Blob> {
