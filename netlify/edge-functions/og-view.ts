@@ -5,7 +5,7 @@ const CRAWLER_RE = /bot|crawl|spider|slurp|facebookexternalhit|Twitterbot|Linked
 const SUPABASE_URL = Deno.env.get("VITE_SUPABASE_URL") ?? ""
 
 function thumbUrl(userId: string, slug: string): string {
-  return `${SUPABASE_URL}/storage/v1/object/public/shared/${userId}/${slug}.thumb.png`
+  return `${SUPABASE_URL}/storage/v1/object/public/shared/${userId}/${slug}.thumb.webp`
 }
 
 function profileUrl(userId: string): string {
@@ -56,7 +56,7 @@ export default async (request: Request, context: Context) => {
   <meta property="og:title" content="${title}" />
   <meta property="og:description" content="${description}" />
   <meta property="og:image" content="${image}" />
-  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:type" content="image/webp" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="1200" />
   <meta property="og:url" content="${url}" />

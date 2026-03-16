@@ -74,31 +74,21 @@
     return serializeProject({ projectName, layers, artW, artH, customPalettes, customPatterns })
   }
 
-  function renderThumbnail(srcLayers: Layer[], w: number, h: number, maxDim = 600): Promise<Blob> {
-    // Deep-clone to strip Svelte 5 proxies
-    const plainLayers: Layer[] = JSON.parse(JSON.stringify(srcLayers))
-    // Render at full artboard size first (avoids ctx.scale issues on Firefox)
-    const full = document.createElement('canvas')
-    full.width = w
-    full.height = h
-    const fctx = full.getContext('2d')!
-    renderLayers2D(fctx, plainLayers, w, h)
-    fctx.globalCompositeOperation = 'destination-over'
-    fctx.fillStyle = '#ffffff'
-    fctx.fillRect(0, 0, w, h)
-    // Scale down to thumbnail
+  function renderThumbnail(srcLayers: Layer[], w: number, h: number, maxDim = 400): Promise<Blob> {
     const scale = Math.min(maxDim / w, maxDim / h)
-    const thumb = document.createElement('canvas')
-    thumb.width = Math.round(w * scale)
-    thumb.height = Math.round(h * scale)
-    const tctx = thumb.getContext('2d')!
-    tctx.drawImage(full, 0, 0, thumb.width, thumb.height)
-    // Use toDataURL→Blob conversion (toBlob produces blank PNGs in some Firefox versions)
-    const dataUrl = thumb.toDataURL('image/png')
-    const bin = atob(dataUrl.split(',')[1])
-    const arr = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
-    return Promise.resolve(new Blob([arr], { type: 'image/png' }))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(w * scale)
+    canvas.height = Math.round(h * scale)
+    const ctx = canvas.getContext('2d')!
+    ctx.scale(scale, scale)
+    renderLayers2D(ctx, srcLayers, w, h)
+    ctx.globalCompositeOperation = 'destination-over'
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, w, h)
+    ctx.globalCompositeOperation = 'source-over'
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob!), 'image/webp', 0.8)
+    })
   }
 
   function getProjectThumbnail(): Promise<Blob> {
