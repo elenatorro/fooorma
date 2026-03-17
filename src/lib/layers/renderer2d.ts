@@ -190,14 +190,16 @@ function getMaskCtx(targetCanvas: HTMLCanvasElement, physW: number, physH: numbe
     const canvas = document.createElement('canvas')
     canvas.width = physW
     canvas.height = physH
-    const ctx = canvas.getContext('2d')!
+    // willReadFrequently forces CPU path — fixes Firefox intermittent blank
+    // output with destination-in compositing on GPU-accelerated canvases
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
     entry = { canvas, ctx }
     _maskPool.set(targetCanvas, entry)
   }
   if (entry.canvas.width !== physW || entry.canvas.height !== physH) {
     entry.canvas.width  = physW
     entry.canvas.height = physH
-    entry.ctx = entry.canvas.getContext('2d')!
+    entry.ctx = entry.canvas.getContext('2d', { willReadFrequently: true })!
   }
   return entry.ctx
 }

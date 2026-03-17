@@ -1193,7 +1193,7 @@ endClip()`,
               <span class="palette-row-name">{palette.name}</span>
               <span class="palette-row-var">palette('{palette.name}', i)</span>
               <button
-                class="code-tool-btn"
+                class="sample-load-btn"
                 title="Copy variable name"
                 onclick={() => navigator.clipboard.writeText(`palette('${palette.name}', 0)`)}
               >copy</button>
@@ -1239,17 +1239,19 @@ endClip()`,
                   ondblclick={() => { editingPaletteId = palette.id; editingPaletteName = palette.name }}
                 >{palette.name}</span>
               {/if}
-              <span class="palette-row-var">palette('{palette.name}', i)</span>
               <button
-                class="code-tool-btn"
+                class="sample-load-btn"
                 title="Copy variable name"
                 onclick={() => navigator.clipboard.writeText(`palette('${palette.name}', 0)`)}
               >copy</button>
               <button
-                class="icon-btn delete-btn"
+                class="sample-load-btn delete-palette-btn"
                 title="Delete palette"
                 onclick={() => onDeletePalette(palette.id)}
-              >×</button>
+              >delete</button>
+            </div>
+            <div class="palette-card-var">
+              <span class="palette-row-var">palette('{palette.name}', i)</span>
             </div>
             <div class="palette-swatches palette-swatches-edit">
               {#each palette.colors as color, ci}
@@ -1890,6 +1892,8 @@ endClip()`,
     transition: background .1s;
   }
   .sample-load-btn:hover { background: var(--accent); color: #fff; }
+  .delete-palette-btn { border-color: var(--text-err); color: var(--text-err); background: none; }
+  .delete-palette-btn:hover { background: var(--text-err); color: #fff; }
 
   /* ── Shape list (type selector) ── */
   .shape-list {
@@ -2004,6 +2008,10 @@ endClip()`,
     font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
     font-size: 10px;
     color: var(--text-4);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
 
   .palette-swatches {
@@ -2038,11 +2046,19 @@ endClip()`,
     border-bottom: 1px solid var(--border-inner);
   }
 
+  .palette-card-var {
+    padding: 0 8px 4px;
+  }
+
   .palette-card-name {
     font-size: 12px;
     color: var(--text-2);
     font-weight: 500;
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     cursor: text;
   }
   .palette-card-name:hover { color: var(--text-1); }

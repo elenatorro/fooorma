@@ -79,6 +79,10 @@
     const canvas = document.createElement('canvas')
     canvas.width = Math.round(w * scale)
     canvas.height = Math.round(h * scale)
+    // Firefox needs the canvas in the DOM to render on offscreen canvases
+    canvas.style.position = 'fixed'
+    canvas.style.left = '-9999px'
+    document.body.appendChild(canvas)
     const ctx = canvas.getContext('2d')!
     ctx.scale(scale, scale)
     renderLayers2D(ctx, srcLayers, w, h)
@@ -87,7 +91,10 @@
     ctx.fillRect(0, 0, w, h)
     ctx.globalCompositeOperation = 'source-over'
     return new Promise((resolve) => {
-      canvas.toBlob((blob) => resolve(blob!), 'image/webp', 0.8)
+      canvas.toBlob((blob) => {
+        document.body.removeChild(canvas)
+        resolve(blob!)
+      }, 'image/png')
     })
   }
 
@@ -330,16 +337,33 @@
   const allPalettes  = $derived([...BUILTIN_PALETTES, ...customPalettes])
   const allPatterns  = $derived([...BUILTIN_PATTERNS, ...customPatterns])
 
-  const activeLayerShapes = $derived(
-    layers.find(l => l.id === activeLayerId)?.shapes ?? []
-  )
+  // Transient shape overrides during code-layer drag (flushed to query on drop)
+  let codeDragOverrides = $state<Map<string, { geom?: ShapeGeom; pts?: number[] }>>(new Map())
 
   // For code-mode layers, replace layer.shapes with evaluated shapes at render time
   const resolvedLayers = $derived(
     layers.map(layer => {
       if (layer.mode !== 'code') return layer
       try {
-        const { shapes } = evaluateQuery(layer.query, artW, artH, allPalettes, allPatterns.filter(p => p.code))
+        let { shapes } = evaluateQuery(layer.query, artW, artH, allPalettes, allPatterns.filter(p => p.code))
+        if (codeDragOverrides.size > 0) {
+          shapes = shapes.map(s => {
+            const ov = codeDragOverrides.get(s.id)
+            if (!ov) return s
+            let updated = s
+            if (ov.geom) {
+              if (s.type === 'mask' || s.type === 'group') {
+                const dx = ov.geom.x - s.geom.x
+                const dy = ov.geom.y - s.geom.y
+                updated = shiftShapeChildren(s, dx, dy)
+              } else {
+                updated = { ...s, geom: ov.geom }
+              }
+            }
+            if (ov.pts) updated = { ...updated, pts: ov.pts }
+            return updated
+          })
+        }
         return { ...layer, shapes }
       } catch {
         return { ...layer, shapes: [] }
@@ -347,7 +371,11 @@
     })
   )
 
-  // Null when the active layer is in code mode — disables canvas draw/select in Viewport
+  const activeLayerShapes = $derived(
+    resolvedLayers.find(l => l.id === activeLayerId)?.shapes ?? []
+  )
+
+  // Null when the active layer is in code mode — disables draw-to-create in Viewport
   const drawableLayerId = $derived(
     layers.find(l => l.id === activeLayerId)?.mode === 'code' ? null : activeLayerId
   )
@@ -443,6 +471,7 @@
   let _lastGeomCommitKey = ''
   $effect(() => { _lastGeomCommitKey = activeShapeId ?? '' })
 
+
   function handleStartDraw(layerId: string, initialGeom: ShapeGeom): string {
     commit()
     const shapeId = crypto.randomUUID()
@@ -477,11 +506,7 @@
 
   function handleSelectShape(shapeId: string, layerId?: string) {
     if (layerId && layerId !== activeLayerId) {
-      // Switch to the layer containing the clicked shape
-      const layer = layers.find(l => l.id === layerId)
-      if (layer && layer.mode !== 'code') {
-        activeLayerId = layerId
-      }
+      activeLayerId = layerId
     }
     activeShapeId = shapeId
     selectedShapeIds = [shapeId]
@@ -490,13 +515,10 @@
   function handleToggleShape(shapeId: string, layerId?: string) {
     if (layerId && layerId !== activeLayerId) {
       // Cross-layer toggle: switch layer and start fresh selection
-      const layer = layers.find(l => l.id === layerId)
-      if (layer && layer.mode !== 'code') {
-        activeLayerId = layerId
-        activeShapeId = shapeId
-        selectedShapeIds = [shapeId]
-        return
-      }
+      activeLayerId = layerId
+      activeShapeId = shapeId
+      selectedShapeIds = [shapeId]
+      return
     }
     if (selectedShapeIds.includes(shapeId)) {
       selectedShapeIds = selectedShapeIds.filter(id => id !== shapeId)
@@ -515,16 +537,25 @@
   ) {
     const key = `batch:${layerId}:${selectedShapeIds.join(',')}`
     if (key !== _lastGeomCommitKey) { commit(); _lastGeomCommitKey = key }
-    layers = layers.map(l => l.id === layerId ? {
-      ...l,
-      shapes: l.shapes.map(s => {
-        const upd = moves.find(u => u.shapeId === s.id)
-        if (!upd) return s
-        if (upd.pts !== undefined) return { ...s, pts: upd.pts }
-        if (upd.geom !== undefined) return { ...s, geom: upd.geom }
-        return s
-      }),
-    } : l)
+    const layer = layers.find(l => l.id === layerId)
+    if (layer?.mode === 'code') {
+      const newOverrides = new Map(codeDragOverrides)
+      for (const m of moves) {
+        newOverrides.set(m.shapeId, { geom: m.geom, pts: m.pts })
+      }
+      codeDragOverrides = newOverrides
+    } else {
+      layers = layers.map(l => l.id === layerId ? {
+        ...l,
+        shapes: l.shapes.map(s => {
+          const upd = moves.find(u => u.shapeId === s.id)
+          if (!upd) return s
+          if (upd.pts !== undefined) return { ...s, pts: upd.pts }
+          if (upd.geom !== undefined) return { ...s, geom: upd.geom }
+          return s
+        }),
+      } : l)
+    }
   }
 
   function handleDeleteShape(layerId: string, shapeId: string) {
@@ -585,19 +616,23 @@
   function handleUpdateGeom(layerId: string, shapeId: string, geom: ShapeGeom) {
     const key = `${layerId}:${shapeId}`
     if (key !== _lastGeomCommitKey) { commit(); _lastGeomCommitKey = key }
-    layers = layers.map(l => l.id === layerId ? {
-      ...l,
-      shapes: l.shapes.map(s => {
-        if (s.id !== shapeId) return s
-        // For mask/group: shift all nested children by the delta
-        if (s.type === 'mask' || s.type === 'group') {
-          const dx = geom.x - s.geom.x
-          const dy = geom.y - s.geom.y
-          return shiftShapeChildren(s, dx, dy)
-        }
-        return { ...s, geom }
-      }),
-    } : l)
+    const layer = layers.find(l => l.id === layerId)
+    if (layer?.mode === 'code') {
+      codeDragOverrides = new Map(codeDragOverrides).set(shapeId, { geom })
+    } else {
+      layers = layers.map(l => l.id === layerId ? {
+        ...l,
+        shapes: l.shapes.map(s => {
+          if (s.id !== shapeId) return s
+          if (s.type === 'mask' || s.type === 'group') {
+            const dx = geom.x - s.geom.x
+            const dy = geom.y - s.geom.y
+            return shiftShapeChildren(s, dx, dy)
+          }
+          return { ...s, geom }
+        }),
+      } : l)
+    }
   }
 
   // ── Palette handlers ───────────────────────────────────────────────────────
@@ -1081,7 +1116,8 @@
   {zoom}
   {panX}
   {panY}
-  activeLayerId={drawableLayerId}
+  {activeLayerId}
+  canDraw={drawableLayerId !== null}
   {activeLayerShapes}
   {resolvedLayers}
   {selectedShapeIds}
@@ -1097,9 +1133,27 @@
   onUpdatePts={(layerId, shapeId, pts) => {
     const key = `pts:${layerId}:${shapeId}`
     if (key !== _lastGeomCommitKey) { commit(); _lastGeomCommitKey = key }
-    layers = layers.map(l => l.id === layerId ? {
-      ...l, shapes: l.shapes.map(s => s.id === shapeId ? { ...s, pts } : s)
-    } : l)
+    const layer = layers.find(l => l.id === layerId)
+    if (layer?.mode === 'code') {
+      codeDragOverrides = new Map(codeDragOverrides).set(shapeId, { pts })
+    } else {
+      layers = layers.map(l => l.id === layerId ? {
+        ...l, shapes: l.shapes.map(s => s.id === shapeId ? { ...s, pts } : s)
+      } : l)
+    }
+  }}
+  onDragEnd={() => {
+    if (codeDragOverrides.size > 0) {
+      const layerId = activeLayerId
+      if (layerId) {
+        const resolved = resolvedLayers.find(l => l.id === layerId)
+        if (resolved) {
+          const query = shapesToCode(resolved.shapes, artW, artH)
+          codeDragOverrides = new Map()
+          layers = layers.map(l => l.id === layerId ? { ...l, query } : l)
+        }
+      }
+    }
   }}
 />
 
@@ -1223,7 +1277,7 @@
     --text-ok:       #4ade80;
     --text-err:      #f87171;
     --accent:        #8b5cf6;
-    --accent-text:   #c4b0f8;
+    --accent-text:   #d4c6fa;
     --viewport-bg:   #0e0e10;
     --viewport-grid: rgba(255,255,255,.03);
     --artboard-shadow: rgba(0,0,0,.7);

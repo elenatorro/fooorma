@@ -23,7 +23,7 @@ export function createCloudStore(userId: string) {
   const folder = userId
 
   function thumbPath(oooName: string): string {
-    return `${folder}/${oooName.replace(/\.ooo$/, '.thumb.webp')}`
+    return `${folder}/${oooName.replace(/\.ooo$/, '.thumb.png')}`
   }
 
   function sharedPath(oooName: string): string {
@@ -101,7 +101,7 @@ export function createCloudStore(userId: string) {
       const tp = thumbPath(fileName)
       await supabase.storage.from(bucket).upload(tp, thumbnail, {
         upsert: true,
-        contentType: 'image/webp',
+        contentType: 'image/png',
       })
     }
 
@@ -165,10 +165,10 @@ export function createCloudStore(userId: string) {
 
     // Upload thumbnail to shared bucket
     if (thumbnail) {
-      const st = `${folder}/${name.replace(/\.ooo$/, '.thumb.webp')}`
+      const st = `${folder}/${name.replace(/\.ooo$/, '.thumb.png')}`
       await supabase.storage.from(SHARED_BUCKET).upload(st, thumbnail, {
         upsert: true,
-        contentType: 'image/webp',
+        contentType: 'image/png',
       })
     }
 
@@ -190,7 +190,7 @@ export function createCloudStore(userId: string) {
     if (!supabase) return
     name = sanitizeName(name)
     const sp = sharedPath(name)
-    const st = `${folder}/${name.replace(/\.ooo$/, '.thumb.webp')}`
+    const st = `${folder}/${name.replace(/\.ooo$/, '.thumb.png')}`
     await supabase.storage.from(SHARED_BUCKET).remove([sp, st])
   }
 
@@ -217,7 +217,7 @@ export async function loadSharedProject(userId: string, slug: string): Promise<{
   if (error || !data) return null
   const content = await data.text()
 
-  const thumbPath = `${userId}/${slug}.thumb.webp`
+  const thumbPath = `${userId}/${slug}.thumb.png`
   const { data: urlData } = supabase.storage.from(SHARED_BUCKET).getPublicUrl(thumbPath)
   const thumbUrl = urlData?.publicUrl ?? null
 

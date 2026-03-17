@@ -26,6 +26,8 @@
     onUpdateGeom,
     onMoveBatch,
     onUpdatePts,
+    onDragEnd,
+    canDraw = true,
   }: {
     artW: number
     artH: number
@@ -46,6 +48,8 @@
     onUpdateGeom: (layerId: string, shapeId: string, geom: ShapeGeom) => void
     onMoveBatch: (layerId: string, moves: Array<{ shapeId: string; geom?: ShapeGeom; pts?: number[] }>) => void
     onUpdatePts: (layerId: string, shapeId: string, pts: number[]) => void
+    onDragEnd?: () => void
+    canDraw?: boolean
   } = $props()
 
 
@@ -200,7 +204,7 @@
       } else if (!e.shiftKey) {
         // Click on empty canvas (no shift): deselect (and enter draw mode if layer is drawable)
         onDeselect()
-        if (activeLayerId) {
+        if (activeLayerId && canDraw) {
           drawDrag = { startNx: nx, startNy: ny }
         }
       }
@@ -275,12 +279,14 @@
   }
 
   function onPointerUp() {
+    const wasDraggingShape = moveDrag !== null || ptsDrag !== null || multiMoveDrag !== null
     dragging       = false
     drawDrag       = null
     drawingShapeId = null
     moveDrag       = null
     ptsDrag        = null
     multiMoveDrag  = null
+    if (wasDraggingShape) onDragEnd?.()
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -488,7 +494,7 @@
           ? 'move'
           : hoverHit
             ? 'move'
-            : activeLayerId
+            : (activeLayerId && canDraw)
               ? 'crosshair'
               : 'default'
   )

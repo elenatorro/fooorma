@@ -196,6 +196,10 @@ export function evaluateQuery(
   const shapes: Shape[] = []
   const errors: string[] = []
 
+  // Deterministic IDs so shapes stay stable across re-evaluations (needed for code-mode drag)
+  let _idCounter = 0
+  const nextId = () => `cq-${_idCounter++}`
+
   // ── Gradient helpers ──────────────────────────────────────────────────────
   type StopInput = string | [string, number?, number?]
 
@@ -352,7 +356,7 @@ export function evaluateQuery(
     const children = shapes.splice(frame.startIdx)
     if (children.length === 0) return
     const group: Shape = {
-      id: crypto.randomUUID(),
+      id: nextId(),
       type: 'group',
       color: { hex: '#000000', opacity: 0 },
       geom: childrenBbox(children),
@@ -385,7 +389,7 @@ export function evaluateQuery(
     const contentShapes = shapes.splice(frame.startIdx)
     if (frame.maskShapes.length === 0 && contentShapes.length === 0) return
     const maskShape: Shape = {
-      id: crypto.randomUUID(),
+      id: nextId(),
       type: 'mask',
       color: { hex: '#000000', opacity: 0 },
       geom: childrenBbox([...frame.maskShapes, ...contentShapes]),
@@ -418,7 +422,7 @@ export function evaluateQuery(
     // x,y = top-left corner → convert to center for internal geom
     const cx = x + w / 2
     const cy = y + h * _hToY
-    const shape: Shape = { id: crypto.randomUUID(), type, color: shapeColor, geom: { x: cx, y: cy, w, h } }
+    const shape: Shape = { id: nextId(), type, color: shapeColor, geom: { x: cx, y: cy, w, h } }
     if (stroke)          shape.stroke    = stroke
     if (xform)           shape.transform = xform
     if (effects.length)  shape.effects   = effects
@@ -448,7 +452,7 @@ export function evaluateQuery(
       ? { hex: colorArg, opacity: Math.max(0, Math.min(1, opacity)) }
       : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
     const shape: Shape = {
-      id: crypto.randomUUID(), type, color: shapeColor,
+      id: nextId(), type, color: shapeColor,
       geom: { x: 0, y: 0, w: 0, h: 0 }, pts,
       ...(strokeWidth !== undefined ? { strokeWidth } : {}),
     }
@@ -468,7 +472,7 @@ export function evaluateQuery(
     const cx = x + d / 2
     const cy = y + d * _hToY
     const shape: Shape = {
-      id: crypto.randomUUID(), type: 'arc',
+      id: nextId(), type: 'arc',
       color: shapeColor,
       geom: { x: cx, y: cy, w: d, h: d },
       pts: [startAngle, endAngle],
@@ -501,7 +505,7 @@ export function evaluateQuery(
       : { hex: colorArg.stops[0]?.hex ?? '#000000', opacity: 1, gradient: colorArg }
     const { stroke, transform: xform, effects } = collectTrailing(trailing)
     const shape: Shape = {
-      id: crypto.randomUUID(), type: 'triangle', color: shapeColor,
+      id: nextId(), type: 'triangle', color: shapeColor,
       geom: { x: 0, y: 0, w: 0, h: 0 }, pts: [x1, y1, x2, y2, x3, y3],
     }
     if (stroke)          shape.stroke    = stroke
@@ -823,7 +827,7 @@ export function evaluateQuery(
 
     for (const s of inner.shapes) {
 
-      let out = { ...s, id: crypto.randomUUID() }
+      let out = { ...s, id: nextId() }
       // Shift to center, then apply scale/mirror/rotate around (0.5, 0.5)
       let lx = s.geom.x + dx, ly = s.geom.y + dy, lw = s.geom.w, lh = s.geom.h
       if (sc !== 1) {
@@ -866,10 +870,10 @@ export function evaluateQuery(
         out.transform = t
       }
       if (s.children) {
-        out.children = s.children.map(c => ({ ...c, id: crypto.randomUUID() }))
+        out.children = s.children.map(c => ({ ...c, id: nextId() }))
       }
       if (s.mask) {
-        out.mask = s.mask.map(c => ({ ...c, id: crypto.randomUUID() }))
+        out.mask = s.mask.map(c => ({ ...c, id: nextId() }))
       }
       shapes.push(out)
     }
