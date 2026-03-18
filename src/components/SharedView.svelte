@@ -52,7 +52,7 @@
       // Render
       canvas.width = artW
       canvas.height = artH
-      const ctx = canvas.getContext('2d')!
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })!
       renderLayers2D(ctx, resolved, artW, artH)
       ctx.globalCompositeOperation = 'destination-over'
       ctx.fillStyle = '#ffffff'

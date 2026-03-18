@@ -83,7 +83,7 @@
     canvas.style.position = 'fixed'
     canvas.style.left = '-9999px'
     document.body.appendChild(canvas)
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
     ctx.scale(scale, scale)
     renderLayers2D(ctx, srcLayers, w, h)
     ctx.globalCompositeOperation = 'destination-over'
@@ -883,7 +883,7 @@
     const canvas = document.createElement('canvas')
     canvas.width  = artW * s
     canvas.height = artH * s
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
     ctx.scale(s, s)
     renderLayers2D(ctx, resolvedLayers, artW, artH)
     ctx.globalCompositeOperation = 'destination-over'
