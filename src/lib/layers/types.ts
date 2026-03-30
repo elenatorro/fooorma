@@ -39,6 +39,8 @@ export interface ShapeEffect {
 }
 
 export interface ShapeTransform {
+  translateX?: number   // artW-fraction offset
+  translateY?: number   // artH-fraction offset
   rotate?: number       // degrees, clockwise, around shape center
   scaleX?: number       // default 1
   scaleY?: number       // default 1

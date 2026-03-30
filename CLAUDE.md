@@ -159,8 +159,8 @@ Stamps are reusable shape groups saved as code snippets. They are stored as `Pat
 // Place a saved stamp
 stamp('Diamond')
 
-// With transforms (scale around center, rotate, mirror)
-stamp('Diamond', { scale: 0.8, rotate: 45, mirror: 'x' })
+// With position and transforms
+stamp('Diamond', { x: 0.3, y: 0.4, scale: 0.8, rotate: 45, mirror: 'x' })
 
 // Inside tile — stamp shapes are in local 0–1 space, tile remaps them
 tile(4, (c, r) => {
@@ -179,7 +179,7 @@ ellipse(0.5, 0.3, 0.1, 0.1, '#fff', 0.5)
 // @endstamp
 ```
 
-**Implementation:** `stamp()` in `evaluateQuery()` looks up the pattern by name, evaluates its code via a recursive `evaluateQuery()` call, then applies scale/rotate/mirror transforms to the resulting shapes before pushing them into the main shapes array.
+**Implementation:** `stamp()` in `evaluateQuery()` looks up the pattern by name, evaluates its code via a recursive `evaluateQuery()` call, then applies x/y positioning, scale/rotate/mirror transforms to the resulting shapes before pushing them into the main shapes array.
 
 ### Mask System
 

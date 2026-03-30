@@ -38,7 +38,10 @@ function makeGradient(
   return cg
 }
 
-export function applyTransform(ctx: CanvasRenderingContext2D, t: ShapeTransform, cx: number, cy: number) {
+export function applyTransform(ctx: CanvasRenderingContext2D, t: ShapeTransform, cx: number, cy: number, artW?: number, artH?: number) {
+  if ((t.translateX || t.translateY) && artW && artH) {
+    ctx.translate((t.translateX ?? 0) * artW, (t.translateY ?? 0) * artH)
+  }
   ctx.translate(cx, cy)
   if (t.skewX || t.skewY) {
     ctx.transform(1, Math.tan((t.skewY ?? 0) * Math.PI / 180),
@@ -772,7 +775,7 @@ export function renderLayers2D(
           ctx.shadowOffsetX = shadowFx.offsetX ?? 0
           ctx.shadowOffsetY = shadowFx.offsetY ?? 4
         }
-        if (shape.transform) applyTransform(ctx, shape.transform, px, py)
+        if (shape.transform) applyTransform(ctx, shape.transform, px, py, artW, artH)
         const hex = color.hex
         const opacity = color.gradient ? 1 : color.opacity
         const hull = render3DShape(ctx, type, px, py, pw, ph, hex, opacity, shape.transform, mat, matRoughness, matIntensity, color.gradient, stroke, artW)
@@ -858,7 +861,7 @@ export function renderLayers2D(
         if (shape.transform) {
           const midX = type === 'curve' ? (p[0] + p[4]) / 2 * artW : (p[0] + p[2]) / 2 * artW
           const midY = type === 'curve' ? (p[1] + p[5]) / 2 * artH : (p[1] + p[3]) / 2 * artH
-          applyTransform(dc, shape.transform, midX, midY)
+          applyTransform(dc, shape.transform, midX, midY, artW, artH)
         }
         if (color.gradient) {
           dc.globalAlpha = 1
@@ -912,7 +915,7 @@ export function renderLayers2D(
           pivotX = (p[0] + p[2] + p[4]) / 3 * artW
           pivotY = (p[1] + p[3] + p[5]) / 3 * artH
         }
-        applyTransform(dc, shape.transform, pivotX, pivotY)
+        applyTransform(dc, shape.transform, pivotX, pivotY, artW, artH)
       }
 
       // Fill

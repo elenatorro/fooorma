@@ -52,6 +52,8 @@ export function shapesToCode(shapes: Shape[], artW = 794, artH = 1123): string {
   function transformStr(t: ShapeTransform, is3D = false): string {
     // For non-3D, filter out 3D-only keys with default values
     const parts: string[] = []
+    if (t.translateX !== undefined) parts.push(`translateX: ${f(t.translateX)}`)
+    if (t.translateY !== undefined) parts.push(`translateY: ${f(t.translateY)}`)
     if (t.rotate   !== undefined) parts.push(`rotate: ${f(t.rotate)}`)
     if (t.scaleX   !== undefined) parts.push(`scaleX: ${f(t.scaleX)}`)
     if (t.scaleY   !== undefined) parts.push(`scaleY: ${f(t.scaleY)}`)
@@ -63,8 +65,9 @@ export function shapesToCode(shapes: Shape[], artW = 794, artH = 1123): string {
     if (t.rotateZ  !== undefined && t.rotateZ  !== 0)         parts.push(`rotateZ: ${f(t.rotateZ)}`)
     if (t.depth    !== undefined && t.depth    !== 0)         parts.push(`depth: ${f(t.depth)}`)
     if (t.smooth   !== undefined && t.smooth   !== 32)        parts.push(`smooth: ${f(t.smooth)}`)
-    // Simple rotate shorthand only for 2D shapes
+    // Simple shorthand only for 2D shapes
     if (!is3D && parts.length === 1 && t.rotate !== undefined) return `rotate(${f(t.rotate)})`
+    if (!is3D && parts.length === 2 && t.translateX !== undefined && t.translateY !== undefined) return `translate(${f(t.translateX)}, ${f(t.translateY)})`
     if (parts.length === 0) return ''
     return `transform({ ${parts.join(', ')} })`
   }
@@ -223,7 +226,7 @@ export function evaluateQuery(
     ({ type: 'radial', cx: 0.5, cy: 0.5, stops: parseStops(args) })
 
   // ── Type guards ───────────────────────────────────────────────────────────
-  const TRANSFORM_KEYS = new Set(['rotate', 'scaleX', 'scaleY', 'skewX', 'skewY', 'rotateX', 'rotateY', 'rotateZ', 'depth', 'smooth'])
+  const TRANSFORM_KEYS = new Set(['translateX', 'translateY', 'rotate', 'scaleX', 'scaleY', 'skewX', 'skewY', 'rotateX', 'rotateY', 'rotateZ', 'depth', 'smooth'])
 
   function isTransform(v: unknown): v is ShapeTransform {
     if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
@@ -261,6 +264,7 @@ export function evaluateQuery(
   }
 
   // ── Transform helpers ─────────────────────────────────────────────────────
+  const translate = (x: number, y: number): ShapeTransform => ({ translateX: x, translateY: y })
   const rotate    = (deg: number): ShapeTransform => ({ rotate: deg })
   const transform = (opts: ShapeTransform): ShapeTransform => ({ ...opts })
 
@@ -781,8 +785,8 @@ export function evaluateQuery(
 
   // ── Stamp (reusable shape group) ────────────────────────────────────────
   // stamp('name')              — place shapes centered at (0.5, 0.5)
-  // stamp('name', { scale, rotate, mirror })  — with transforms
-  interface StampOpts { scale?: number; rotate?: number; mirror?: 'x' | 'y' | 'xy' }
+  // stamp('name', { x, y, scale, rotate, mirror })  — with position & transforms
+  interface StampOpts { x?: number; y?: number; scale?: number; rotate?: number; mirror?: 'x' | 'y' | 'xy' }
 
   /** Compute bounding-box center of shapes (x in artW-space, y in artH-space). */
   function stampCenter(list: Shape[]): [number, number] {
@@ -814,9 +818,10 @@ export function evaluateQuery(
     if (inner.errors.length) { errors.push(...inner.errors.map(e => `stamp '${name}': ${e}`)); return }
     if (inner.shapes.length === 0) return
 
-    // Auto-center: shift all shapes so their bbox center sits at (0.5, 0.5)
+    // Auto-center: shift all shapes so their bbox center sits at target (default 0.5, 0.5)
     const [cx, cy] = stampCenter(inner.shapes)
-    const dx = 0.5 - cx, dy = 0.5 - cy
+    const tx = opts?.x ?? 0.5, ty = opts?.y ?? 0.5
+    const dx = tx - cx, dy = ty - cy
 
     const sc = opts?.scale ?? 1
     const rot = opts?.rotate ?? 0
@@ -831,16 +836,16 @@ export function evaluateQuery(
       // Shift to center, then apply scale/mirror/rotate around (0.5, 0.5)
       let lx = s.geom.x + dx, ly = s.geom.y + dy, lw = s.geom.w, lh = s.geom.h
       if (sc !== 1) {
-        lx = 0.5 + (lx - 0.5) * sc
-        ly = 0.5 + (ly - 0.5) * sc
+        lx = tx + (lx - tx) * sc
+        ly = ty + (ly - ty) * sc
         lw *= sc; lh *= sc
       }
-      if (mx) lx = 1 - lx
-      if (my) ly = 1 - ly
+      if (mx) lx = 2 * tx - lx
+      if (my) ly = 2 * ty - ly
       if (rot !== 0) {
-        const ddx = lx - 0.5, ddy = ly - 0.5
-        lx = 0.5 + ddx * cosR - ddy * sinR
-        ly = 0.5 + ddx * sinR + ddy * cosR
+        const ddx = lx - tx, ddy = ly - ty
+        lx = tx + ddx * cosR - ddy * sinR
+        ly = ty + ddx * sinR + ddy * cosR
       }
       out.geom = { x: lx, y: ly, w: lw, h: lh }
       // Transform pts
@@ -848,13 +853,13 @@ export function evaluateQuery(
         const pts = [...s.pts]
         for (let i = 0; i < pts.length; i += 2) {
           let px = pts[i] + dx, py = pts[i + 1] + dy
-          if (sc !== 1) { px = 0.5 + (px - 0.5) * sc; py = 0.5 + (py - 0.5) * sc }
-          if (mx) px = 1 - px
-          if (my) py = 1 - py
+          if (sc !== 1) { px = tx + (px - tx) * sc; py = ty + (py - ty) * sc }
+          if (mx) px = 2 * tx - px
+          if (my) py = 2 * ty - py
           if (rot !== 0) {
-            const ddx = px - 0.5, ddy = py - 0.5
-            px = 0.5 + ddx * cosR - ddy * sinR
-            py = 0.5 + ddx * sinR + ddy * cosR
+            const ddx = px - tx, ddy = py - ty
+            px = tx + ddx * cosR - ddy * sinR
+            py = ty + ddx * sinR + ddy * cosR
           }
           pts[i] = px; pts[i + 1] = py
         }
@@ -903,7 +908,7 @@ export function evaluateQuery(
       'cube', 'sphere', 'cylinder', 'torus',
       'beginGroup', 'endGroup',
       'beginMask', 'endMask', 'endClip',
-      'stroke', 'wireframe', 'rotate', 'transform',
+      'stroke', 'wireframe', 'translate', 'rotate', 'transform',
       'shadow', 'blur', 'bevel', 'noise', 'warp', 'material',
       'repeat', 'grid', 'wave', 'circular', 'tile', 'mirror',
       'stamp',
@@ -920,7 +925,7 @@ export function evaluateQuery(
       cube, sphere, cylinder, torus,
       beginGroup, endGroup,
       beginMask, endMask, endClip,
-      mkStroke, mkWireframe, rotate, transform,
+      mkStroke, mkWireframe, translate, rotate, transform,
       shadow, blur, bevel, noise, warp, material,
       repeat, grid, wave, circular, tile, mirror,
       stamp,
