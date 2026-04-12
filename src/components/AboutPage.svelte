@@ -1,12 +1,25 @@
 <script lang="ts">
-  const { onBack }: { onBack: () => void } = $props()
+  const {
+    onBack,
+    onLibrary,
+    theme,
+    onToggleTheme,
+  }: {
+    onBack: () => void
+    onLibrary: () => void
+    theme: 'dark' | 'light'
+    onToggleTheme: () => void
+  } = $props()
 </script>
 
 <div class="about-page">
-  <header class="about-topbar">
-    <button class="back-btn" onclick={onBack}>← Back</button>
-    <span class="about-logo">fooorma</span>
-    <span class="about-beta">beta</span>
+  <header class="page-topbar">
+    <button class="logo" onclick={onBack}>fooorma</button>
+    <span class="beta-badge">beta</span>
+    <button class="nav-btn active">About</button>
+    <button class="nav-btn" onclick={onLibrary}>Library</button>
+    <span class="topbar-spacer"></span>
+    <button class="theme-btn" onclick={onToggleTheme} title="Toggle light/dark theme">{theme === 'dark' ? '◑' : '◐'}</button>
   </header>
 
   <main class="about-content">
@@ -59,15 +72,6 @@
           <li>PWA support</li>
         </ul>
       </div>
-
-      <!-- TODO: Add future changelog entries here
-      <div class="changelog-entry">
-        <div class="changelog-version">v0.2.0 <span class="changelog-date">YYYY-MM-DD</span></div>
-        <ul class="changelog-list">
-          <li>...</li>
-        </ul>
-      </div>
-      -->
     </section>
 
     <footer class="about-footer">
@@ -87,7 +91,8 @@
     overflow: hidden;
   }
 
-  .about-topbar {
+  /* ── Shared page topbar ── */
+  .page-topbar {
     height: 44px;
     background: var(--bg-bar);
     border-bottom: 1px solid var(--border);
@@ -98,27 +103,24 @@
     flex-shrink: 0;
   }
 
-  .back-btn {
+  .logo {
     background: none;
-    border: 1px solid var(--border);
-    color: var(--text-3);
-    font-size: 12px;
-    padding: 5px 12px;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: border-color .15s, color .15s;
-  }
-  .back-btn:hover { border-color: var(--text-5); color: var(--text-2); }
-
-  .about-logo {
+    border: none;
     font-family: monospace;
     font-size: 14px;
     font-weight: 600;
     color: var(--accent);
     letter-spacing: .08em;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    flex-shrink: 0;
+    transition: opacity .15s;
   }
+  .logo:hover { opacity: 0.75; }
 
-  .about-beta {
+  .beta-badge {
     font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
@@ -127,8 +129,38 @@
     background: color-mix(in srgb, var(--accent) 15%, transparent);
     padding: 1px 5px;
     border-radius: 4px;
+    line-height: 1.4;
   }
 
+  .nav-btn {
+    background: none;
+    border: none;
+    color: var(--text-4);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: color .12s, background .12s;
+  }
+  .nav-btn:hover { color: var(--text-2); background: var(--bg-hover); }
+  .nav-btn.active { color: var(--text-1); }
+
+  .topbar-spacer { flex: 1; }
+
+  .theme-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-3);
+    font-size: 14px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+    flex-shrink: 0;
+  }
+  .theme-btn:hover { border-color: var(--text-5); color: var(--text-2); }
+
+  /* ── Content ── */
   .about-content {
     flex: 1;
     overflow-y: auto;

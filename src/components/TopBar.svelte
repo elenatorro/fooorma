@@ -20,6 +20,7 @@
     onNew,
     onToggleTheme,
     onAbout,
+    onLibrary,
     user = null,
     authLoading = false,
     authError = null,
@@ -43,6 +44,7 @@
     onNew: () => void
     onToggleTheme: () => void
     onAbout: () => void
+    onLibrary: () => void
     user?: User | null
     authLoading?: boolean
     authError?: string | null
@@ -136,62 +138,62 @@
 
 <header class="topbar">
   <span class="logo">fooorma</span><span class="beta-badge">beta</span>
-  <button class="info-btn" onclick={onAbout} title="About fooorma">ⓘ</button>
+  <button class="nav-btn" onclick={onAbout} title="About fooorma">About</button>
+  <button class="nav-btn" onclick={onLibrary} title="Library API docs">Library</button>
 
-  <!-- Canvas size editor -->
-  <div class="size-editor">
-    <div class="dim-pair">
-      <label class="dim-label">W</label>
-      <input
-        class="dim-input"
-        type="number"
-        min="100" max="8192" step="1"
-        value={editW}
-        oninput={(e) => editW = parseInt((e.target as HTMLInputElement).value) || editW}
-        onblur={applySize}
-        onkeydown={onDimKeydown}
-      />
-    </div>
-    <span class="dim-sep">×</span>
-    <div class="dim-pair">
-      <label class="dim-label">H</label>
-      <input
-        class="dim-input"
-        type="number"
-        min="100" max="8192" step="1"
-        value={editH}
-        oninput={(e) => editH = parseInt((e.target as HTMLInputElement).value) || editH}
-        onblur={applySize}
-        onkeydown={onDimKeydown}
-      />
-    </div>
-    <button class="swap-btn" onclick={swapDims} title="Swap width ↔ height">⇄</button>
-    <div class="preset-wrap">
-      <button
-        class="preset-toggle"
-        class:active={isPreset}
-        onclick={() => showPresets = !showPresets}
-        title="Presets"
-      >▾</button>
-      {#if showPresets}
-        <div class="preset-dropdown">
-          {#each PRESETS as p}
-            <button
-              class="preset-item"
-              class:active={p.w === artW && p.h === artH}
-              onclick={() => selectPreset(p)}
-            >
-              <span>{p.label}</span>
-              <span class="preset-dim">{p.w}×{p.h}</span>
-            </button>
-          {/each}
-        </div>
-      {/if}
-    </div>
-  </div>
-
-  <!-- File controls -->
+  <!-- File controls (right side) -->
   <div class="file-controls">
+    <!-- Canvas size editor -->
+    <div class="size-editor">
+      <div class="dim-pair">
+        <label class="dim-label">W</label>
+        <input
+          class="dim-input"
+          type="number"
+          min="100" max="8192" step="1"
+          value={editW}
+          oninput={(e) => editW = parseInt((e.target as HTMLInputElement).value) || editW}
+          onblur={applySize}
+          onkeydown={onDimKeydown}
+        />
+      </div>
+      <span class="dim-sep">×</span>
+      <div class="dim-pair">
+        <label class="dim-label">H</label>
+        <input
+          class="dim-input"
+          type="number"
+          min="100" max="8192" step="1"
+          value={editH}
+          oninput={(e) => editH = parseInt((e.target as HTMLInputElement).value) || editH}
+          onblur={applySize}
+          onkeydown={onDimKeydown}
+        />
+      </div>
+      <button class="swap-btn" onclick={swapDims} title="Swap width ↔ height">⇄</button>
+      <div class="preset-wrap">
+        <button
+          class="preset-toggle"
+          class:active={isPreset}
+          onclick={() => showPresets = !showPresets}
+          title="Presets"
+        >▾</button>
+        {#if showPresets}
+          <div class="preset-dropdown">
+            {#each PRESETS as p}
+              <button
+                class="preset-item"
+                class:active={p.w === artW && p.h === artH}
+                onclick={() => selectPreset(p)}
+              >
+                <span>{p.label}</span>
+                <span class="preset-dim">{p.w}×{p.h}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
     <input
       class="project-name-input"
       type="text"
@@ -550,7 +552,7 @@
     z-index: 50;
   }
 
-  /* ── Beta badge + info button ── */
+  /* ── Beta badge + nav buttons ── */
   .beta-badge {
     font-size: 9px;
     font-weight: 700;
@@ -563,22 +565,18 @@
     line-height: 1.4;
   }
 
-  .info-btn {
+  .nav-btn {
     background: none;
     border: none;
-    color: var(--text-6);
-    font-size: 16px;
+    color: var(--text-4);
+    font-size: 12px;
     cursor: pointer;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    transition: background .12s, color .12s;
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: color .12s, background .12s;
     flex-shrink: 0;
   }
-  .info-btn:hover { background: var(--bg-hover); color: var(--text-3); }
+  .nav-btn:hover { color: var(--text-2); background: var(--bg-hover); }
 
   /* ── Project name ── */
   .project-name-input {

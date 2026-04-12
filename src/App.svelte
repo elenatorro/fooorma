@@ -42,6 +42,7 @@
   const auth = supabaseConfigured ? createAuthState() : null
 
   import AboutPage       from './components/AboutPage.svelte'
+  import LibraryPage     from './components/LibraryPage.svelte'
   import ProjectsPanel   from './components/ProjectsPanel.svelte'
   import SharedView      from './components/SharedView.svelte'
   import TopBar          from './components/TopBar.svelte'
@@ -134,26 +135,28 @@
   function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark' }
 
   // ── Page routing ─────────────────────────────────────────────────────────
-  function parseRoute(): { page: 'app' | 'about' | 'view'; viewUserId?: string; viewSlug?: string } {
+  function parseRoute(): { page: 'app' | 'about' | 'library' | 'view'; viewUserId?: string; viewSlug?: string } {
     // Path-based /view/ routes (for shareable URLs with OG metadata)
     const pathMatch = location.pathname.match(/^\/view\/([^/]+)\/(.+)$/)
     if (pathMatch) return { page: 'view', viewUserId: pathMatch[1], viewSlug: decodeURIComponent(pathMatch[2]) }
     // Hash-based routes (legacy + in-app navigation)
     const hash = location.hash
     if (hash === '#/about') return { page: 'about' }
+    if (hash === '#/library') return { page: 'library' }
     const viewMatch = hash.match(/^#\/view\/([^/]+)\/(.+)$/)
     if (viewMatch) return { page: 'view', viewUserId: viewMatch[1], viewSlug: decodeURIComponent(viewMatch[2]) }
     return { page: 'app' }
   }
 
   const initRoute = parseRoute()
-  let page = $state<'app' | 'about' | 'view'>(initRoute.page)
+  let page = $state<'app' | 'about' | 'library' | 'view'>(initRoute.page)
   let viewUserId = $state(initRoute.viewUserId ?? '')
   let viewSlug = $state(initRoute.viewSlug ?? '')
   let showProjectsPanel = $state(false)
 
-  function goAbout() { page = 'about'; history.pushState(null, '', '#/about') }
-  function goApp()   { page = 'app'; viewUserId = ''; viewSlug = ''; history.pushState(null, '', '/') }
+  function goAbout()   { page = 'about'; history.pushState(null, '', '#/about') }
+  function goLibrary() { page = 'library'; history.pushState(null, '', '#/library') }
+  function goApp()     { page = 'app'; viewUserId = ''; viewSlug = ''; history.pushState(null, '', '/') }
 
   function onPopState() {
     const r = parseRoute()
@@ -1081,7 +1084,9 @@
 </script>
 
 {#if page === 'about'}
-  <AboutPage onBack={goApp} />
+  <AboutPage onBack={goApp} onLibrary={goLibrary} {theme} onToggleTheme={toggleTheme} />
+{:else if page === 'library'}
+  <LibraryPage onBack={goApp} onAbout={goAbout} {theme} onToggleTheme={toggleTheme} />
 {:else if page === 'view' && viewUserId && viewSlug}
   <SharedView userId={viewUserId} slug={viewSlug} onBack={goApp} {theme} onToggleTheme={toggleTheme} />
 {:else}
@@ -1102,6 +1107,7 @@
   onLoad={handleLoad}
   onToggleTheme={toggleTheme}
   onAbout={goAbout}
+  onLibrary={goLibrary}
   user={auth?.user ?? null}
   authLoading={auth?.loading ?? false}
   authError={auth?.error ?? null}

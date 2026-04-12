@@ -93,9 +93,12 @@ function applyBevel(
   ctx.restore()
 }
 
-// Eagerly create noise canvas at module load so the bitmap is ready before first render.
-// Firefox can return null from createPattern() if the source canvas was just created.
-const _noiseCanvas: HTMLCanvasElement = (() => {
+// Lazily create noise canvas on first use so the module can be imported in non-DOM
+// environments (e.g. Node / SSR). Firefox can return null from createPattern() if
+// the source canvas was just created, so we keep the canvas cached after first init.
+let _noiseCanvas: HTMLCanvasElement | null = null
+function getNoiseCanvas(): HTMLCanvasElement {
+  if (_noiseCanvas) return _noiseCanvas
   const c = document.createElement('canvas')
   c.width = c.height = 128
   const nc = c.getContext('2d')!
@@ -106,15 +109,16 @@ const _noiseCanvas: HTMLCanvasElement = (() => {
     img.data[i + 3] = 255
   }
   nc.putImageData(img, 0, 0)
+  _noiseCanvas = c
   return c
-})()
+}
 
 function applyNoise(
   ctx: CanvasRenderingContext2D,
   buildPath: () => void,
   amount: number,
 ): void {
-  const pat = ctx.createPattern(_noiseCanvas, 'repeat')
+  const pat = ctx.createPattern(getNoiseCanvas(), 'repeat')
   if (!pat) return
   ctx.save()
   buildPath()
@@ -477,7 +481,7 @@ function drawFaces(
       dc.clip()
       dc.globalAlpha = 0.05 + matRoughness * 0.2
       dc.globalCompositeOperation = 'overlay'
-      const pat = dc.createPattern(_noiseCanvas, 'repeat')
+      const pat = dc.createPattern(getNoiseCanvas(), 'repeat')
       if (pat) { dc.fillStyle = pat; dc.fillRect(bx, by, bw, bh) }
       dc.restore()
     }
